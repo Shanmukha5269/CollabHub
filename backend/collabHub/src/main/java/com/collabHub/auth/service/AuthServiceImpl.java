@@ -11,6 +11,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
+
 /**
  * Auth Service Implementation
  * Handles authentication logic
@@ -42,6 +44,10 @@ public class AuthServiceImpl implements AuthService {
         }
 
         log.info("Login successful for user: {}", loginRequestDTO.getEmail());
+
+        // Update last login timestamp
+        user.setLastLoginAt(LocalDateTime.now());
+        userRepository.save(user);
 
         // Generate tokens
         String token = jwtTokenProvider.generateTokenFromEmail(user.getEmail());
