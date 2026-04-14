@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class UserResponseDTO {
+public class UserProfileDTO {
 
     private Long id;
     private String name;
@@ -21,4 +21,5 @@ public class UserResponseDTO {
     private UserStatus status;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private LocalDateTime lastLoginAt;
 }
