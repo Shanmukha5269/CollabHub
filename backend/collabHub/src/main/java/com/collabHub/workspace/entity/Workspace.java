@@ -40,4 +40,11 @@ public class Workspace {
 
     @UpdateTimestamp
     private LocalDateTime updatedAt;
+
+    /**
+     * Soft delete timestamp
+     * Workspace is considered deleted if this field is not null
+     */
+    @Column(nullable = true)
+    private LocalDateTime deletedAt;
 }
