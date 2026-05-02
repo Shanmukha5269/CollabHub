@@ -2,8 +2,12 @@ package com.collabHub.workspace.controller;
 
 import com.collabHub.common.util.SecurityUtil;
 import com.collabHub.workspace.dto.CreateWorkspaceRequestDTO;
+import com.collabHub.workspace.dto.TransferOwnershipDTO;
 import com.collabHub.workspace.dto.WorkspaceResponseDTO;
+import com.collabHub.workspace.dto.AddWorkspaceMemberDTO;
+import com.collabHub.workspace.dto.WorkspaceMemberDTO;
 import com.collabHub.workspace.service.WorkspaceService;
+import com.collabHub.workspace.service.WorkspaceMemberService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +28,7 @@ import java.util.List;
 public class WorkspaceController {
 
     private final WorkspaceService workspaceService;
+    private final WorkspaceMemberService workspaceMemberService;
 
     /**
      * Create a new workspace
@@ -104,7 +109,7 @@ public class WorkspaceController {
     }
 
     /**
-     * Delete workspace (soft delete)
+     * Delete workspace
      * 
      * Only the owner can delete their workspace
      * 
@@ -120,6 +125,104 @@ public class WorkspaceController {
         
         // Delete workspace
         workspaceService.deleteWorkspace(id, currentUserEmail);
+        
+        return ResponseEntity.noContent().build();
+    }
+
+    
+    // WORKSPACE MEMBER MANAGEMENT 
+
+    /**
+     * Add a member to a workspace
+     * 
+     * Only the workspace owner can add members
+     * 
+     * @param workspaceId workspace ID
+     * @param request member details to add
+     * @return added member details
+     */
+    @PostMapping("/{workspaceId}/members")
+    public ResponseEntity<WorkspaceMemberDTO> addMember(
+            @PathVariable Long workspaceId,
+            @Valid @RequestBody AddWorkspaceMemberDTO request) {
+        log.info("Request to add member {} to workspace {}", request.getUserId(), workspaceId);
+        
+        String currentUserEmail = SecurityUtil.getCurrentUserEmail();
+        WorkspaceMemberDTO member = workspaceMemberService.addMember(workspaceId, request, currentUserEmail);
+        
+        return ResponseEntity.status(HttpStatus.CREATED).body(member);
+    }
+
+    /**
+     * Get all members of a workspace
+     * 
+     * Any member of the workspace can view other members
+     * 
+     * @param workspaceId workspace ID
+     * @return list of workspace members
+     */
+    @GetMapping("/{workspaceId}/members")
+    public ResponseEntity<List<WorkspaceMemberDTO>> getWorkspaceMembers(@PathVariable Long workspaceId) {
+        log.info("Fetching members for workspace {}", workspaceId);
+        
+        String currentUserEmail = SecurityUtil.getCurrentUserEmail();
+        List<WorkspaceMemberDTO> members = workspaceMemberService.getWorkspaceMembers(workspaceId, currentUserEmail);
+        
+        return ResponseEntity.ok(members);
+    }
+
+    /**
+     * Get a specific member's details
+     * 
+     * @param workspaceId workspace ID
+     * @param userId user ID to get details of
+     * @return member details
+     */
+    @GetMapping("/{workspaceId}/members/{userId}")
+    public ResponseEntity<WorkspaceMemberDTO> getMember(
+            @PathVariable Long workspaceId,
+            @PathVariable Long userId) {
+        log.info("Fetching member {} details in workspace {}", userId, workspaceId);
+        
+        String currentUserEmail = SecurityUtil.getCurrentUserEmail();
+        WorkspaceMemberDTO member = workspaceMemberService.getMember(workspaceId, userId, currentUserEmail);
+        
+        return ResponseEntity.ok(member);
+    }
+
+    /**
+     * - Promote MEMBER to OWNER (transfer ownership)
+     * - Demote OWNER to MEMBER
+     */
+    @PutMapping("/{workspaceId}/transfer-ownership")
+    public ResponseEntity<WorkspaceMemberDTO> transferOwnership(
+            @PathVariable Long workspaceId,
+            @Valid @RequestBody TransferOwnershipDTO request) {
+
+        String currentUserEmail = SecurityUtil.getCurrentUserEmail();
+
+        return ResponseEntity.ok(
+            workspaceMemberService.transferOwnership(workspaceId, request, currentUserEmail)
+        );
+    }
+
+    /**
+     * Remove a member from a workspace
+     * 
+     * Only the workspace owner can remove members
+     * 
+     * @param workspaceId workspace ID
+     * @param userId user ID to remove
+     * @return 204 No Content
+     */
+    @DeleteMapping("/{workspaceId}/members/{userId}")
+    public ResponseEntity<Void> removeMember(
+            @PathVariable Long workspaceId,
+            @PathVariable Long userId) {
+        log.info("Request to remove member {} from workspace {}", userId, workspaceId);
+        
+        String currentUserEmail = SecurityUtil.getCurrentUserEmail();
+        workspaceMemberService.removeMember(workspaceId, userId, currentUserEmail);
         
         return ResponseEntity.noContent().build();
     }
