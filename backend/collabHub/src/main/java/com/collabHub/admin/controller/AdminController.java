@@ -4,6 +4,7 @@ import com.collabHub.admin.dto.AdminStatisticsDTO;
 import com.collabHub.admin.service.AdminService;
 import com.collabHub.common.util.SecurityUtil;
 import com.collabHub.user.dto.UserProfileDTO;
+import com.collabHub.workspace.dto.WorkspaceResponseDTO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -12,6 +13,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 
 @Slf4j
@@ -98,5 +101,19 @@ public class AdminController {
         AdminStatisticsDTO statistics = adminService.getUserStatistics(currentUserEmail);
         
         return ResponseEntity.ok(statistics);
+    }
+
+    /**
+     * Get all workspaces (Admin only)
+     * Returns all workspaces in the system
+     */
+    @GetMapping("/workspaces")
+    public ResponseEntity<List<WorkspaceResponseDTO>> getAllWorkspaces() {
+        log.info("Admin requesting all workspaces");
+        
+        String currentUserEmail = SecurityUtil.getCurrentUserEmail();
+        List<WorkspaceResponseDTO> workspaces = adminService.getAllWorkspaces(currentUserEmail);
+        
+        return ResponseEntity.ok(workspaces);
     }
 }

@@ -1,10 +1,12 @@
 package com.collabHub.admin.service;
 
 import com.collabHub.user.dto.UserProfileDTO;
+import com.collabHub.workspace.dto.WorkspaceResponseDTO;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import com.collabHub.admin.dto.*;
 
+import java.util.List;
 
 public interface AdminService {
 
@@ -33,4 +35,9 @@ public interface AdminService {
      */
     Page<UserProfileDTO> searchUsers(String searchQuery, String status, String role, 
                                      Pageable pageable, String currentUserEmail);
+
+    /**
+     * ADMIN ONLY: Get all workspaces
+     */
+    List<WorkspaceResponseDTO> getAllWorkspaces(String currentUserEmail);
 }

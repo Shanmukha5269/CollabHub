@@ -8,6 +8,8 @@ import com.collabHub.user.entity.Role;
 import com.collabHub.user.entity.User;
 import com.collabHub.user.entity.UserStatus;
 import com.collabHub.user.repository.UserRepository;
+import com.collabHub.workspace.dto.WorkspaceResponseDTO;
+import com.collabHub.workspace.service.WorkspaceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -26,6 +28,7 @@ import java.util.List;
 public class AdminServiceImpl implements AdminService {
 
     private final UserRepository userRepository;
+    private final WorkspaceService workspaceService;
 
     /**
      * Verify that the current user is an ADMIN
@@ -179,6 +182,17 @@ public class AdminServiceImpl implements AdminService {
         Page<User> filtered = new PageImpl<>(filteredList, pageable, results.getTotalElements());
         
         return filtered.map(this::convertToProfileDTO);
+    }
+
+    @Override
+    public List<WorkspaceResponseDTO> getAllWorkspaces(String currentUserEmail) {
+        log.info("Admin {} requesting all workspaces", currentUserEmail);
+        
+        // Verify admin role
+        verifyAdminRole(currentUserEmail);
+        
+        // Delegate to workspace service
+        return workspaceService.getAllWorkspaces(currentUserEmail);
     }
 
     /**
