@@ -40,10 +40,17 @@ public interface WorkspaceService {
     WorkspaceResponseDTO updateWorkspace(Long workspaceId, CreateWorkspaceRequestDTO request, String ownerEmail);
 
     /**
-     * Delete workspace (soft delete)
+     * Delete workspace (hard delete)
      * Only the owner can delete their workspace
      * @param workspaceId workspace ID to delete
      * @param ownerEmail email of the user requesting
      */
     void deleteWorkspace(Long workspaceId, String ownerEmail);
+
+    /**
+     * Get all workspaces (Admin only)
+     * @param requesterEmail email of the user requesting (must be admin)
+     * @return list of all workspaces
+     */
+    List<WorkspaceResponseDTO> getAllWorkspaces(String requesterEmail);
 }

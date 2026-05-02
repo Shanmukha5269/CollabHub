@@ -17,31 +17,13 @@ public interface WorkspaceRepository extends JpaRepository<Workspace, Long> {
     Optional<Workspace> findByIdAndOwnerId(Long workspaceId, Long ownerId);
 
     /**
-     * Find workspace by ID and Owner ID (excluding soft-deleted)
-     * Ensures user can only access their own non-deleted workspaces
+     * Find all workspaces owned by a user
      */
-    Optional<Workspace> findByIdAndOwnerIdAndDeletedAtIsNull(Long workspaceId, Long ownerId);
-
-    /**
-     * Find workspace by ID (excluding soft-deleted)
-     * Allows any authenticated user to view workspace details
-     */
-    Optional<Workspace> findByIdAndDeletedAtIsNull(Long workspaceId);
-
-    /**
-     * Find all non-deleted workspaces owned by a user
-     */
-    List<Workspace> findByOwnerIdAndDeletedAtIsNull(Long ownerId);
+    List<Workspace> findByOwnerId(Long ownerId);
 
     /**
      * Find workspace by name and owner
      * Check for duplicate workspace names per user
      */
     Optional<Workspace> findByNameAndOwnerId(String name, Long ownerId);
-
-    /**
-     * Find ALL non-deleted workspaces
-     * Visible to all authenticated users
-     */
-    List<Workspace> findAllByDeletedAtIsNull();
 }

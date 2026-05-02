@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -23,6 +24,12 @@ public class WorkspaceResponseDTO {
      * Owner's basic info - minimal fields without null values
      */
     private UserBasicInfoDTO owner;
+
+    /**
+     * List of all active members in this workspace
+     * Includes the owner and all invited members
+     */
+    private List<WorkspaceMemberDTO> members;
 
     private LocalDateTime createdAt;
 

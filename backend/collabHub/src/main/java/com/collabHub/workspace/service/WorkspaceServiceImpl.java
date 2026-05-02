@@ -2,6 +2,7 @@ package com.collabHub.workspace.service;
 
 import com.collabHub.common.exception.UserBannedException;
 import com.collabHub.common.exception.UserNotFoundException;
+import com.collabHub.common.exception.UserAccessDeniedException;
 import com.collabHub.user.entity.Role;
 import com.collabHub.user.entity.User;
 import com.collabHub.user.entity.UserStatus;
@@ -9,13 +10,16 @@ import com.collabHub.user.repository.UserRepository;
 import com.collabHub.workspace.dto.CreateWorkspaceRequestDTO;
 import com.collabHub.workspace.dto.UserBasicInfoDTO;
 import com.collabHub.workspace.dto.WorkspaceResponseDTO;
+import com.collabHub.workspace.dto.WorkspaceMemberDTO;
 import com.collabHub.workspace.entity.Workspace;
+import com.collabHub.workspace.entity.WorkspaceMember;
+import com.collabHub.workspace.entity.WorkspaceRole;
 import com.collabHub.workspace.repository.WorkspaceRepository;
+import com.collabHub.workspace.repository.WorkspaceMemberRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -26,6 +30,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
 
     private final WorkspaceRepository workspaceRepository;
     private final UserRepository userRepository;
+    private final WorkspaceMemberRepository memberRepository;
 
     @Override
     public WorkspaceResponseDTO createWorkspace(CreateWorkspaceRequestDTO request, String ownerEmail) {
@@ -61,15 +66,25 @@ public class WorkspaceServiceImpl implements WorkspaceService {
 
         // 6. Save to database
         Workspace savedWorkspace = workspaceRepository.save(workspace);
+
+        // 7. Add owner as member
+        WorkspaceMember ownerMember = WorkspaceMember.builder()
+                .workspace(savedWorkspace)
+                .user(owner)
+                .role(WorkspaceRole.OWNER)
+                .canManageMembers(true)
+                .build();
+            
+        memberRepository.save(ownerMember);
         log.info("Workspace created successfully with ID: {} for user: {}", savedWorkspace.getId(), ownerEmail);
 
-        // 7. Convert to response DTO
+        // 8. Convert to response DTO
         return convertToResponseDTO(savedWorkspace);
     }
 
     @Override
     public List<WorkspaceResponseDTO> getUserWorkspaces(String ownerEmail) {
-        log.info("Fetching all workspaces for user: {}", ownerEmail);
+        log.info("Fetching workspaces for user: {}", ownerEmail);
 
         // 1. Find the user by email
         User user = userRepository.findByEmail(ownerEmail)
@@ -87,13 +102,38 @@ public class WorkspaceServiceImpl implements WorkspaceService {
             throw new UserBannedException("Your account has been banned. You cannot perform this action.");
         }
 
-        // 4. Fetch ALL non-deleted workspaces (not restricted to owner)
-        // This allows all authenticated users to see all workspaces
-        List<Workspace> workspaces = workspaceRepository.findAllByDeletedAtIsNull();
-        log.info("Found {} workspaces for user: {}", workspaces.size(), ownerEmail);
+        // 4. If user is ADMIN, return all workspaces
+        if (Role.ADMIN.equals(user.getRole())) {
+            log.debug("Admin user {} requesting all workspaces", ownerEmail);
+            List<Workspace> allWorkspaces = workspaceRepository.findAll();
+            return allWorkspaces.stream()
+                    .map(this::convertToResponseDTO)
+                    .collect(Collectors.toList());
+        }
 
-        // 5. Convert each workspace to response DTO and return as list
-        return workspaces.stream()
+        // 5. For regular users, return workspaces they are members of OR own
+        List<WorkspaceMember> memberships = memberRepository.findByUserIdAndRemovedAtIsNull(user.getId());
+        List<Workspace> memberWorkspaces = memberships.stream()
+                .map(WorkspaceMember::getWorkspace)
+                .collect(Collectors.toList());
+        
+        // 6. Also include workspaces where the user is the owner
+        List<Workspace> ownedWorkspaces = workspaceRepository.findAll().stream()
+                .filter(w -> w.getOwner().getId().equals(user.getId()))
+                .collect(Collectors.toList());
+        
+        // 7. Combine and deduplicate: member workspaces + owned workspaces (in case owner is also a member)
+        List<Workspace> allUserWorkspaces = new java.util.ArrayList<>(memberWorkspaces);
+        ownedWorkspaces.forEach(owned -> {
+            if (!allUserWorkspaces.stream().anyMatch(w -> w.getId().equals(owned.getId()))) {
+                allUserWorkspaces.add(owned);
+            }
+        });
+        
+        log.info("Found {} workspaces for user: {}", allUserWorkspaces.size(), ownerEmail);
+
+        // 8. Convert each workspace to response DTO and return as list
+        return allUserWorkspaces.stream()
                 .map(this::convertToResponseDTO)
                 .collect(Collectors.toList());
     }
@@ -120,9 +160,9 @@ public class WorkspaceServiceImpl implements WorkspaceService {
 
         // 4. Find the workspace by ID (not restricted by ownership)
         // Any authenticated user can view any workspace
-        Workspace workspace = workspaceRepository.findByIdAndDeletedAtIsNull(workspaceId)
+        Workspace workspace = workspaceRepository.findById(workspaceId)
                 .orElseThrow(() -> {
-                    log.warn("Workspace {} not found or is deleted", workspaceId);
+                    log.warn("Workspace {} not found", workspaceId);
                     return new IllegalArgumentException("Workspace not found");
                 });
 
@@ -152,10 +192,10 @@ public class WorkspaceServiceImpl implements WorkspaceService {
             throw new UserBannedException("Your account has been banned. You cannot perform this action.");
         }
 
-        // 4. Find the workspace by ID (and it's not deleted)
-        Workspace workspace = workspaceRepository.findByIdAndDeletedAtIsNull(workspaceId)
+        // 4. Find the workspace by ID
+        Workspace workspace = workspaceRepository.findById(workspaceId)
                 .orElseThrow(() -> {
-                    log.warn("Workspace {} not found or is deleted", workspaceId);
+                    log.warn("Workspace {} not found", workspaceId);
                     return new IllegalArgumentException("Workspace not found");
                 });
 
@@ -204,10 +244,10 @@ public class WorkspaceServiceImpl implements WorkspaceService {
             throw new UserBannedException("Your account has been banned. You cannot perform this action.");
         }
 
-        // 4. Find the workspace by ID (and it's not already deleted)
-        Workspace workspace = workspaceRepository.findByIdAndDeletedAtIsNull(workspaceId)
+        // 4. Find the workspace by ID
+        Workspace workspace = workspaceRepository.findById(workspaceId)
                 .orElseThrow(() -> {
-                    log.warn("Workspace {} not found or is already deleted", workspaceId);
+                    log.warn("Workspace {} not found", workspaceId);
                     return new IllegalArgumentException("Workspace not found");
                 });
 
@@ -217,11 +257,50 @@ public class WorkspaceServiceImpl implements WorkspaceService {
             throw new IllegalArgumentException("You don't have permission to delete this workspace");
         }
 
-        // 6. Perform soft delete (set deletedAt timestamp)
-        workspace.setDeletedAt(LocalDateTime.now());
-        workspaceRepository.save(workspace);
+        // 6. Delete all workspace members first (cascade delete)
+        List<WorkspaceMember> members = memberRepository.findByWorkspaceId(workspaceId);
+        memberRepository.deleteAll(members);
+        
+        // 7. Perform hard delete (completely remove from database)
+        workspaceRepository.deleteById(workspaceId);
 
-        log.info("Workspace soft-deleted successfully with ID: {} by user: {}", workspaceId, ownerEmail);
+        log.info("Workspace permanently deleted with ID: {} by user: {}", workspaceId, ownerEmail);
+    }
+
+    @Override
+    public List<WorkspaceResponseDTO> getAllWorkspaces(String requesterEmail) {
+        log.info("Admin requesting all workspaces");
+
+        // 1. Find the user by email
+        User user = userRepository.findByEmail(requesterEmail)
+                .orElseThrow(() -> new UserNotFoundException("User not found with email: " + requesterEmail));
+
+        // 2. Check if user is soft-deleted
+        if (user.getDeletedAt() != null) {
+            log.warn("Deleted user {} attempted to fetch all workspaces", requesterEmail);
+            throw new UserNotFoundException("User account is deleted");
+        }
+
+        // 3. Check if user is BANNED
+        if (UserStatus.BANNED.equals(user.getStatus())) {
+            log.warn("Banned user {} attempted to fetch all workspaces", requesterEmail);
+            throw new UserBannedException("Your account has been banned. You cannot perform this action.");
+        }
+
+        // 4. Check if user is ADMIN
+        if (!Role.ADMIN.equals(user.getRole())) {
+            log.warn("Non-admin user {} attempted to fetch all workspaces", requesterEmail);
+            throw new UserAccessDeniedException("Only admins can view all workspaces");
+        }
+
+        // 5. Fetch all workspaces
+        List<Workspace> allWorkspaces = workspaceRepository.findAll();
+        log.info("Returning {} workspaces to admin", allWorkspaces.size());
+
+        // 6. Convert each workspace to response DTO and return as list
+        return allWorkspaces.stream()
+                .map(this::convertToResponseDTO)
+                .collect(Collectors.toList());
     }
 
     /**
@@ -248,15 +327,29 @@ public class WorkspaceServiceImpl implements WorkspaceService {
         return isOwner;
     }
 
-    /**
-     * Helper method to convert Workspace entity to WorkspaceResponseDTO
-     */
     private WorkspaceResponseDTO convertToResponseDTO(Workspace workspace) {
+        // Get all active members of the workspace
+        List<WorkspaceMember> members = memberRepository.findByWorkspaceIdAndRemovedAtIsNull(workspace.getId());
+        List<WorkspaceMemberDTO> memberDTOs = members.stream()
+                .map(member -> {
+                    return WorkspaceMemberDTO.builder()
+                            .id(member.getId())
+                            .userId(member.getUser().getId())
+                            .userName(member.getUser().getName())
+                            .userEmail(member.getUser().getEmail())
+                            .role(member.getRole())
+                            .canManageMembers(member.getCanManageMembers())
+                            .joinedAt(member.getJoinedAt())
+                            .build();
+                })
+                .collect(Collectors.toList());
+        
         return WorkspaceResponseDTO.builder()
                 .id(workspace.getId())
                 .name(workspace.getName())
                 .description(workspace.getDescription())
                 .owner(convertUserToBasicInfoDTO(workspace.getOwner()))
+                .members(memberDTOs)
                 .createdAt(workspace.getCreatedAt())
                 .updatedAt(workspace.getUpdatedAt())
                 .build();
