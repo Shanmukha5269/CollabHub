@@ -1,6 +1,7 @@
 package com.collabHub.admin.controller;
 
 import com.collabHub.admin.dto.AdminStatisticsDTO;
+import com.collabHub.admin.dto.WorkspaceStatisticsDTO;
 import com.collabHub.admin.service.AdminService;
 import com.collabHub.common.util.SecurityUtil;
 import com.collabHub.user.dto.UserProfileDTO;
@@ -25,9 +26,7 @@ public class AdminController {
 
     private final AdminService adminService;
 
-    /**
-     * Example: GET /api/admin/users?page=0&size=10&sort=name,asc
-     */
+
     @GetMapping("/users")
     public ResponseEntity<Page<UserProfileDTO>> getAllUsers(
             @PageableDefault(size = 20, page = 0, sort = "createdAt", direction = Sort.Direction.DESC)
@@ -52,9 +51,7 @@ public class AdminController {
         return ResponseEntity.ok(user);
     }
 
-    /**
-     * Example: GET /api/admin/users/search?q=john&status=ACTIVE&role=USER&page=0&size=10
-     */
+
     @GetMapping("/users/search")
     public ResponseEntity<Page<UserProfileDTO>> searchUsers(
             @RequestParam(required = false) String q,
@@ -115,5 +112,17 @@ public class AdminController {
         List<WorkspaceResponseDTO> workspaces = adminService.getAllWorkspaces(currentUserEmail);
         
         return ResponseEntity.ok(workspaces);
+    }
+
+
+    @GetMapping("/workspaces/statistics")
+    public ResponseEntity<WorkspaceStatisticsDTO> getWorkspaceStatistics() {
+        log.info("Admin requesting workspace statistics");
+
+        String currentUserEmail = SecurityUtil.getCurrentUserEmail();
+        WorkspaceStatisticsDTO stats =
+                adminService.getWorkspaceStatistics(currentUserEmail);
+
+        return ResponseEntity.ok(stats);
     }
 }

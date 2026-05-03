@@ -2,6 +2,7 @@ package com.collabHub.workspace.repository;
 
 import com.collabHub.workspace.entity.WorkspaceMember;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -57,4 +58,7 @@ public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember
      * @return count of active members
      */
     long countByWorkspaceIdAndRemovedAtIsNull(Long workspaceId);
+
+    @Query("SELECT COUNT(wm) FROM WorkspaceMember wm WHERE wm.removedAt IS NULL")
+    long countActiveMembers();
 }

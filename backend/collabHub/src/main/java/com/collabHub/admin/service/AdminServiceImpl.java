@@ -1,6 +1,7 @@
 package com.collabHub.admin.service;
 
 import com.collabHub.admin.dto.AdminStatisticsDTO;
+import com.collabHub.admin.dto.WorkspaceStatisticsDTO;
 import com.collabHub.common.exception.UserAccessDeniedException;
 import com.collabHub.common.exception.UserNotFoundException;
 import com.collabHub.user.dto.UserProfileDTO;
@@ -9,6 +10,8 @@ import com.collabHub.user.entity.User;
 import com.collabHub.user.entity.UserStatus;
 import com.collabHub.user.repository.UserRepository;
 import com.collabHub.workspace.dto.WorkspaceResponseDTO;
+import com.collabHub.workspace.repository.WorkspaceMemberRepository;
+import com.collabHub.workspace.repository.WorkspaceRepository;
 import com.collabHub.workspace.service.WorkspaceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +32,8 @@ public class AdminServiceImpl implements AdminService {
 
     private final UserRepository userRepository;
     private final WorkspaceService workspaceService;
+    private final WorkspaceRepository workspaceRepository;
+    private final WorkspaceMemberRepository workspaceMemberRepository;
 
     /**
      * Verify that the current user is an ADMIN
@@ -209,6 +214,27 @@ public class AdminServiceImpl implements AdminService {
                 .createdAt(user.getCreatedAt())
                 .updatedAt(user.getUpdatedAt())
                 .lastLoginAt(user.getLastLoginAt())
+                .build();
+    }
+
+    @Override
+    public WorkspaceStatisticsDTO getWorkspaceStatistics(String currentUserEmail) {
+        log.info("Admin {} requesting workspace statistics", currentUserEmail);
+
+        // Verify admin
+        verifyAdminRole(currentUserEmail);
+
+        Long totalWorkspaces = workspaceRepository.count();
+
+        Long totalMembers = workspaceMemberRepository.countActiveMembers();
+
+        Double avgMembers = totalWorkspaces == 0 ? 0.0 :
+                (double) totalMembers / totalWorkspaces;
+
+        return WorkspaceStatisticsDTO.builder()
+                .totalWorkspaces(totalWorkspaces)
+                .totalMembers(totalMembers)
+                .averageMembersPerWorkspace(avgMembers)
                 .build();
     }
 }

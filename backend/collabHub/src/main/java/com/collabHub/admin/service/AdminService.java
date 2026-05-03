@@ -40,4 +40,9 @@ public interface AdminService {
      * ADMIN ONLY: Get all workspaces
      */
     List<WorkspaceResponseDTO> getAllWorkspaces(String currentUserEmail);
+
+    /**
+     * ADMIN ONLY: Get workspaces statistics
+     */
+    WorkspaceStatisticsDTO getWorkspaceStatistics(String currentUserEmail);
 }
