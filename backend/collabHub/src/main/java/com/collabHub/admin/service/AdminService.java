@@ -45,4 +45,14 @@ public interface AdminService {
      * ADMIN ONLY: Get workspaces statistics
      */
     WorkspaceStatisticsDTO getWorkspaceStatistics(String currentUserEmail);
+
+    /**
+     * ADMIN ONLY: Suspend a workspace
+     */
+    WorkspaceResponseDTO suspendWorkspace(Long workspaceId, String reason, String currentUserEmail);
+
+    /**
+     * ADMIN ONLY: Unsuspend a workspace
+     */
+    WorkspaceResponseDTO unsuspendWorkspace(Long workspaceId, String currentUserEmail);
 }

@@ -3,6 +3,7 @@ package com.collabHub.workspace.service;
 import com.collabHub.common.exception.UserBannedException;
 import com.collabHub.common.exception.UserNotFoundException;
 import com.collabHub.common.exception.UserAccessDeniedException;
+import com.collabHub.common.exception.WorkspaceSuspendedException;
 import com.collabHub.user.entity.Role;
 import com.collabHub.user.entity.User;
 import com.collabHub.user.entity.UserStatus;
@@ -166,6 +167,13 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                     return new IllegalArgumentException("Workspace not found");
                 });
 
+        // 5. Check if workspace is suspended
+        if (workspace.getSuspended()) {
+            log.warn("User {} attempted to access suspended workspace {}", ownerEmail, workspaceId);
+            throw new WorkspaceSuspendedException(
+                    "This workspace has been suspended by an administrator. Reason: " + workspace.getSuspensionReason());
+        }
+
         log.info("Workspace found: {}", workspaceId);
 
         // 5. Convert to response DTO
@@ -199,28 +207,35 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                     return new IllegalArgumentException("Workspace not found");
                 });
 
-        // 5. Authorization check: Only owner or ADMIN can update
+        // 5. Check if workspace is suspended
+        if (workspace.getSuspended()) {
+            log.warn("User {} attempted to update suspended workspace {}", ownerEmail, workspaceId);
+            throw new WorkspaceSuspendedException(
+                    "This workspace has been suspended by an administrator and cannot be modified.");
+        }
+
+        // 6. Authorization check: Only owner or ADMIN can update
         if (!isOwnerOrAdmin(user, workspace)) {
             log.warn("User {} attempted to update workspace {} without proper permissions", ownerEmail, workspaceId);
             throw new IllegalArgumentException("You don't have permission to update this workspace");
         }
 
-        // 6. Check if new workspace name already exists (and is different from current name)
+        // 7. Check if new workspace name already exists (and is different from current name)
         // Name must be unique per owner
         if (!workspace.getName().equals(request.getName()) &&
                 workspaceRepository.findByNameAndOwnerId(request.getName(), workspace.getOwner().getId()).isPresent()) {
             throw new IllegalArgumentException("Workspace with name '" + request.getName() + "' already exists");
         }
 
-        // 7. Update workspace fields
+        // 8. Update workspace fields
         workspace.setName(request.getName());
         workspace.setDescription(request.getDescription());
 
-        // 8. Save updated workspace
+        // 9. Save updated workspace
         Workspace updatedWorkspace = workspaceRepository.save(workspace);
         log.info("Workspace updated successfully with ID: {} by user: {}", workspaceId, ownerEmail);
 
-        // 9. Convert to response DTO
+        // 10. Convert to response DTO
         return convertToResponseDTO(updatedWorkspace);
     }
 
@@ -251,17 +266,24 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                     return new IllegalArgumentException("Workspace not found");
                 });
 
-        // 5. Authorization check: Only owner or ADMIN can delete
+        // 5. Check if workspace is suspended
+        if (workspace.getSuspended()) {
+            log.warn("User {} attempted to delete suspended workspace {}", ownerEmail, workspaceId);
+            throw new WorkspaceSuspendedException(
+                    "This workspace has been suspended by an administrator and cannot be deleted.");
+        }
+
+        // 6. Authorization check: Only owner or ADMIN can delete
         if (!isOwnerOrAdmin(user, workspace)) {
             log.warn("User {} attempted to delete workspace {} without proper permissions", ownerEmail, workspaceId);
             throw new IllegalArgumentException("You don't have permission to delete this workspace");
         }
 
-        // 6. Delete all workspace members first (cascade delete)
+        // 7. Delete all workspace members first (cascade delete)
         List<WorkspaceMember> members = memberRepository.findByWorkspaceId(workspaceId);
         memberRepository.deleteAll(members);
         
-        // 7. Perform hard delete (completely remove from database)
+        // 8. Perform hard delete (completely remove from database)
         workspaceRepository.deleteById(workspaceId);
 
         log.info("Workspace permanently deleted with ID: {} by user: {}", workspaceId, ownerEmail);
@@ -352,6 +374,9 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 .members(memberDTOs)
                 .createdAt(workspace.getCreatedAt())
                 .updatedAt(workspace.getUpdatedAt())
+                .suspended(workspace.getSuspended())
+                .suspendedAt(workspace.getSuspendedAt())
+                .suspensionReason(workspace.getSuspensionReason())
                 .build();
     }
 
@@ -366,5 +391,10 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 .email(user.getEmail())
                 .role(user.getRole())
                 .build();
+    }
+
+    @Override
+    public WorkspaceResponseDTO convertWorkspaceToDTO(Workspace workspace) {
+        return convertToResponseDTO(workspace);
     }
 }

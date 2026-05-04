@@ -2,10 +2,12 @@ package com.collabHub.admin.controller;
 
 import com.collabHub.admin.dto.AdminStatisticsDTO;
 import com.collabHub.admin.dto.WorkspaceStatisticsDTO;
+import com.collabHub.admin.dto.SuspendWorkspaceRequestDTO;
 import com.collabHub.admin.service.AdminService;
 import com.collabHub.common.util.SecurityUtil;
 import com.collabHub.user.dto.UserProfileDTO;
 import com.collabHub.workspace.dto.WorkspaceResponseDTO;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -124,5 +126,42 @@ public class AdminController {
                 adminService.getWorkspaceStatistics(currentUserEmail);
 
         return ResponseEntity.ok(stats);
+    }
+
+    /**
+     * Suspend a workspace (Admin only)
+     * Prevents users from accessing or modifying the workspace
+     * 
+     * @param workspaceId the ID of the workspace to suspend
+     * @param request suspension details (reason)
+     * @return suspended workspace response
+     */
+    @PutMapping("/workspaces/{workspaceId}/suspend")
+    public ResponseEntity<WorkspaceResponseDTO> suspendWorkspace(
+            @PathVariable Long workspaceId,
+            @Valid @RequestBody SuspendWorkspaceRequestDTO request) {
+        log.info("Admin attempting to suspend workspace with ID: {}", workspaceId);
+        
+        String currentUserEmail = SecurityUtil.getCurrentUserEmail();
+        WorkspaceResponseDTO workspace = adminService.suspendWorkspace(workspaceId, request.getReason(), currentUserEmail);
+        
+        return ResponseEntity.ok(workspace);
+    }
+
+    /**
+     * Unsuspend a workspace (Admin only)
+     * Allows users to access the workspace again
+     * 
+     * @param workspaceId the ID of the workspace to unsuspend
+     * @return unsuspended workspace response
+     */
+    @PutMapping("/workspaces/{workspaceId}/unsuspend")
+    public ResponseEntity<WorkspaceResponseDTO> unsuspendWorkspace(@PathVariable Long workspaceId) {
+        log.info("Admin attempting to unsuspend workspace with ID: {}", workspaceId);
+        
+        String currentUserEmail = SecurityUtil.getCurrentUserEmail();
+        WorkspaceResponseDTO workspace = adminService.unsuspendWorkspace(workspaceId, currentUserEmail);
+        
+        return ResponseEntity.ok(workspace);
     }
 }

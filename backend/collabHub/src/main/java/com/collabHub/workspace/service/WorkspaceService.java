@@ -53,4 +53,12 @@ public interface WorkspaceService {
      * @return list of all workspaces
      */
     List<WorkspaceResponseDTO> getAllWorkspaces(String requesterEmail);
+
+    /**
+     * Convert Workspace entity to WorkspaceResponseDTO
+     * Used internally for DTO conversion including suspended workspaces
+     * @param workspace the workspace entity to convert
+     * @return workspace response DTO
+     */
+    WorkspaceResponseDTO convertWorkspaceToDTO(com.collabHub.workspace.entity.Workspace workspace);
 }

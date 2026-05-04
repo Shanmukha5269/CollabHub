@@ -10,6 +10,7 @@ import com.collabHub.user.entity.User;
 import com.collabHub.user.entity.UserStatus;
 import com.collabHub.user.repository.UserRepository;
 import com.collabHub.workspace.dto.WorkspaceResponseDTO;
+import com.collabHub.workspace.entity.Workspace;
 import com.collabHub.workspace.repository.WorkspaceMemberRepository;
 import com.collabHub.workspace.repository.WorkspaceRepository;
 import com.collabHub.workspace.service.WorkspaceService;
@@ -236,5 +237,71 @@ public class AdminServiceImpl implements AdminService {
                 .totalMembers(totalMembers)
                 .averageMembersPerWorkspace(avgMembers)
                 .build();
+    }
+
+    @Override
+    public WorkspaceResponseDTO suspendWorkspace(Long workspaceId, String reason, String currentUserEmail) {
+        log.info("Admin {} attempting to suspend workspace with ID: {}", currentUserEmail, workspaceId);
+
+        // Verify admin role
+        verifyAdminRole(currentUserEmail);
+
+        // Find the workspace
+        Workspace workspace = workspaceRepository.findById(workspaceId)
+                .orElseThrow(() -> {
+                    log.warn("Workspace not found with ID: {}", workspaceId);
+                    return new IllegalArgumentException("Workspace not found with ID: " + workspaceId);
+                });
+
+        // Check if already suspended
+        if (workspace.getSuspended()) {
+            log.warn("Attempted to suspend already suspended workspace ID: {}", workspaceId);
+            throw new IllegalArgumentException("Workspace is already suspended");
+        }
+
+        // Suspend the workspace
+        workspace.setSuspended(true);
+        workspace.setSuspendedAt(LocalDateTime.now());
+        workspace.setSuspensionReason(reason);
+
+        // Save the updated workspace
+        Workspace updatedWorkspace = workspaceRepository.save(workspace);
+        log.info("Admin {} suspended workspace ID: {} with reason: {}", currentUserEmail, workspaceId, reason);
+
+        // Return the updated workspace as DTO using the helper function
+        return workspaceService.convertWorkspaceToDTO(updatedWorkspace);
+    }
+
+    @Override
+    public WorkspaceResponseDTO unsuspendWorkspace(Long workspaceId, String currentUserEmail) {
+        log.info("Admin {} attempting to unsuspend workspace with ID: {}", currentUserEmail, workspaceId);
+
+        // Verify admin role
+        verifyAdminRole(currentUserEmail);
+
+        // Find the workspace
+        Workspace workspace = workspaceRepository.findById(workspaceId)
+                .orElseThrow(() -> {
+                    log.warn("Workspace not found with ID: {}", workspaceId);
+                    return new IllegalArgumentException("Workspace not found with ID: " + workspaceId);
+                });
+
+        // Check if currently suspended
+        if (!workspace.getSuspended()) {
+            log.warn("Attempted to unsuspend non-suspended workspace ID: {}", workspaceId);
+            throw new IllegalArgumentException("Workspace is not suspended");
+        }
+
+        // Unsuspend the workspace
+        workspace.setSuspended(false);
+        workspace.setSuspendedAt(null);
+        workspace.setSuspensionReason(null);
+
+        // Save the updated workspace
+        Workspace updatedWorkspace = workspaceRepository.save(workspace);
+        log.info("Admin {} unsuspended workspace ID: {}", currentUserEmail, workspaceId);
+
+        // Return the updated workspace as DTO using the helper function
+        return workspaceService.convertWorkspaceToDTO(updatedWorkspace);
     }
 }

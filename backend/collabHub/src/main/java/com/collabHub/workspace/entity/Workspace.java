@@ -40,4 +40,14 @@ public class Workspace {
 
     @UpdateTimestamp
     private LocalDateTime updatedAt;
+
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    @Builder.Default
+    private Boolean suspended = false;
+
+    @Column
+    private LocalDateTime suspendedAt;
+
+    @Column(length = 500)
+    private String suspensionReason;
 }

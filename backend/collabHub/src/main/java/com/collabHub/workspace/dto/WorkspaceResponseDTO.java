@@ -34,4 +34,10 @@ public class WorkspaceResponseDTO {
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
+
+    private Boolean suspended;
+
+    private LocalDateTime suspendedAt;
+
+    private String suspensionReason;
 }
