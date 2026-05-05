@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -71,12 +72,7 @@ public class WorkspaceMemberServiceImpl implements WorkspaceMemberService {
             throw new UserNotFoundException("Cannot add deleted user to workspace");
         }
 
-        // 6. Check if user is already a member
-        if (memberRepository.existsByWorkspaceIdAndUserIdAndRemovedAtIsNull(workspaceId, request.getUserId())) {
-            throw new UserAccessDeniedException("User is already a member of this workspace");
-        }
-
-        // 7. Parse and validate role
+        // 6. Parse and validate role
         String roleStr = request.getRole() != null ? request.getRole() : "MEMBER";
         WorkspaceRole role;
         try {
@@ -85,7 +81,28 @@ public class WorkspaceMemberServiceImpl implements WorkspaceMemberService {
             throw new IllegalArgumentException("Invalid role: " + roleStr);
         }
 
-        // 8. Create workspace member record
+        Optional<WorkspaceMember> existingMember =
+        memberRepository.findByWorkspaceIdAndUserId(workspaceId, request.getUserId());
+
+        if (existingMember.isPresent()) {
+            WorkspaceMember member = existingMember.get();
+        
+            if (member.getRemovedAt() == null) {
+                throw new UserAccessDeniedException("User is already a member of this workspace");
+            }
+        
+            // Restore soft-deleted member
+            member.setRemovedAt(null);
+            member.setRole(role);
+            member.setCanManageMembers(role == WorkspaceRole.OWNER);
+        
+            memberRepository.save(member);
+            log.info("Restored user {} as {} in workspace {}", request.getUserId(), role, workspaceId);
+        
+            return convertToDTO(member);
+        }
+
+        // 7. Create workspace member record
         WorkspaceMember member = WorkspaceMember.builder()
                 .workspace(workspace)
                 .user(userToAdd)
