@@ -19,6 +19,10 @@ public class ChannelResponseDTO {
     private Boolean isPrivate;
     private Long creatorId;
     private String creatorName;
+    private String creatorEmail;
+    private Long workspaceOwnerId;
+    private String workspaceOwnerName;
+    private String workspaceOwnerEmail;
     private Integer memberCount;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
