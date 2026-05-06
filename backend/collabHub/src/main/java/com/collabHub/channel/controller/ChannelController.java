@@ -1,9 +1,13 @@
 package com.collabHub.channel.controller;
 
+import com.collabHub.channel.dto.AddMemberDTO;
+import com.collabHub.channel.dto.ChannelMemberResponseDTO;
 import com.collabHub.channel.dto.ChannelResponseDTO;
 import com.collabHub.channel.dto.CreateChannelDTO;
+import com.collabHub.channel.dto.RemoveMemberDTO;
 import com.collabHub.channel.dto.UpdateChannelDTO;
 import com.collabHub.channel.service.ChannelService;
+import com.collabHub.channel.service.ChannelMemberService;
 import com.collabHub.common.util.SecurityUtil;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +29,7 @@ import java.util.List;
 public class ChannelController {
 
     private final ChannelService channelService;
+    private final ChannelMemberService channelMemberService;
 
     /**
      * Create a new channel in a workspace
@@ -131,35 +136,53 @@ public class ChannelController {
     /**
      * Add a member to a channel
      *
-     * @param id channel ID
-     * @param userId user ID to add
+     * @param channelId channel ID
+     * @param request member to remove (contains userId)
      * @return updated channel response
      */
-    @PostMapping("/{id}/members/{userId}")
-    public ResponseEntity<ChannelResponseDTO> addMemberToChannel(@PathVariable Long id,
-                                                                @PathVariable Long userId) {
-        log.info("Add member {} to channel {} request", userId, id);
+    @PostMapping("/{channelId}/members")
+    public ResponseEntity<ChannelMemberResponseDTO> addMemberToChannel(
+            @PathVariable Long channelId,
+            @Valid @RequestBody AddMemberDTO request) {
+        log.info("Add member to channel request for channel: {}", channelId);
 
         String currentUserEmail = SecurityUtil.getCurrentUserEmail();
-        ChannelResponseDTO response = channelService.addMemberToChannel(id, userId, currentUserEmail);
+        ChannelMemberResponseDTO response = channelMemberService.addMemberToChannel(channelId, request, currentUserEmail);
 
-        return ResponseEntity.ok(response);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     /**
      * Remove a member from a channel
      *
-     * @param id channel ID
-     * @param userId user ID to remove
+     * @param channelId channel ID
+     * @param request member to remove (contains userId)
      * @return updated channel response
      */
-    @DeleteMapping("/{id}/members/{userId}")
-    public ResponseEntity<ChannelResponseDTO> removeMemberFromChannel(@PathVariable Long id,
-                                                                     @PathVariable Long userId) {
-        log.info("Remove member {} from channel {} request", userId, id);
+    @DeleteMapping("/{channelId}/members")
+    public ResponseEntity<ChannelMemberResponseDTO> removeMemberFromChannel(
+            @PathVariable Long channelId,
+            @Valid @RequestBody RemoveMemberDTO request) {
+        log.info("Remove member from channel request for channel: {}", channelId);
 
         String currentUserEmail = SecurityUtil.getCurrentUserEmail();
-        ChannelResponseDTO response = channelService.removeMemberFromChannel(id, userId, currentUserEmail);
+        ChannelMemberResponseDTO response = channelMemberService.removeMemberFromChannel(channelId, request, currentUserEmail);
+
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Get all members of a channel
+     *
+     * @param channelId channel ID
+     * @return list of channel members
+     */
+    @GetMapping("/{channelId}/members")
+    public ResponseEntity<List<ChannelMemberResponseDTO>> getChannelMembers(@PathVariable Long channelId) {
+        log.info("Get channel members request for channel: {}", channelId);
+
+        String currentUserEmail = SecurityUtil.getCurrentUserEmail();
+        List<ChannelMemberResponseDTO> response = channelMemberService.getChannelMembers(channelId, currentUserEmail);
 
         return ResponseEntity.ok(response);
     }
