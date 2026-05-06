@@ -246,9 +246,9 @@ public class ChannelServiceImpl implements ChannelService {
             throw new IllegalArgumentException("Cannot update channels in a suspended workspace");
         }
 
-        // 4. Check if user can modify the channel (creator or admin)
-        if (!channel.getCreator().getId().equals(user.getId())) {
-            throw new UserAccessDeniedException("Only the channel creator can modify the channel");
+        // 4. Check if user can modify the channel (channel creator or workspace owner)
+        if (!isChannelOwner(channel, user)) {
+            throw new UserAccessDeniedException("Only the channel creator or workspace owner can modify the channel");
         }
 
         // 5. Update fields
@@ -301,128 +301,13 @@ public class ChannelServiceImpl implements ChannelService {
             throw new IllegalArgumentException("Cannot delete channels in a suspended workspace");
         }
 
-        // 4. Check if user can delete the channel (creator or admin)
-        if (!channel.getCreator().getId().equals(user.getId())) {
-            throw new UserAccessDeniedException("Only the channel creator can delete the channel");
+        // 4. Check if user can delete the channel (channel creator or workspace owner)
+        if (!isChannelOwner(channel, user)) {
+            throw new UserAccessDeniedException("Only the channel creator or workspace owner can delete the channel");
         }
 
         channelRepository.delete(channel);
         log.info("Channel deleted successfully with ID: {}", channelId);
-    }
-
-    @Override
-    @Transactional
-    public ChannelResponseDTO addMemberToChannel(Long channelId, Long userId, String currentUserEmail) {
-        log.info("Adding member {} to channel ID: {} by user: {}", userId, channelId, currentUserEmail);
-
-        // 1. Find and validate the current user (who is adding the member)
-        User currentUser = userRepository.findByEmail(currentUserEmail)
-                .orElseThrow(() -> new UserNotFoundException("User not found with email: " + currentUserEmail));
-
-        if (currentUser.getDeletedAt() != null) {
-            throw new UserNotFoundException("User account is deleted");
-        }
-
-        if (UserStatus.BANNED.equals(currentUser.getStatus())) {
-            throw new UserBannedException("Your account has been banned. You cannot perform this action.");
-        }
-
-        // 2. Find and validate the channel
-        Channel channel = channelRepository.findById(channelId)
-                .orElseThrow(() -> new IllegalArgumentException("Channel not found"));
-
-        // 3. Check if workspace is suspended
-        if (channel.getWorkspace().getSuspended()) {
-            throw new IllegalArgumentException("Cannot manage members in a suspended workspace");
-        }
-
-        // 4. Check if current user is the channel creator or admin
-        if (!channel.getCreator().getId().equals(currentUser.getId())) {
-            throw new UserAccessDeniedException("Only the channel creator can add members");
-        }
-
-        // 5. Find and validate the user to be added
-        User userToAdd = userRepository.findById(userId)
-                .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + userId));
-
-        if (userToAdd.getDeletedAt() != null) {
-            throw new UserNotFoundException("Cannot add deleted user to channel");
-        }
-
-        if (UserStatus.BANNED.equals(userToAdd.getStatus())) {
-            throw new UserBannedException("Cannot add banned user to channel");
-        }
-
-        // 6. Check if user is a member of the workspace
-        boolean isWorkspaceMember = workspaceMemberRepository
-                .findByWorkspaceIdAndUserIdAndRemovedAtIsNull(channel.getWorkspace().getId(), userId)
-                .isPresent();
-
-        if (!isWorkspaceMember) {
-            throw new UserAccessDeniedException("User is not a member of this workspace");
-        }
-
-        // 7. Check if user is already a member of the channel
-        if (channel.getMembers().contains(userToAdd)) {
-            throw new IllegalArgumentException("User is already a member of this channel");
-        }
-
-        // 8. Add the user to the channel
-        channel.getMembers().add(userToAdd);
-        Channel savedChannel = channelRepository.save(channel);
-        log.info("Member {} added to channel ID: {} successfully", userId, channelId);
-
-        return convertToResponseDTO(savedChannel);
-    }
-
-    @Override
-    @Transactional
-    public ChannelResponseDTO removeMemberFromChannel(Long channelId, Long userId, String currentUserEmail) {
-        log.info("Removing member {} from channel ID: {} by user: {}", userId, channelId, currentUserEmail);
-
-        // 1. Find and validate the current user (who is removing the member)
-        User currentUser = userRepository.findByEmail(currentUserEmail)
-                .orElseThrow(() -> new UserNotFoundException("User not found with email: " + currentUserEmail));
-
-        if (currentUser.getDeletedAt() != null) {
-            throw new UserNotFoundException("User account is deleted");
-        }
-
-        if (UserStatus.BANNED.equals(currentUser.getStatus())) {
-            throw new UserBannedException("Your account has been banned. You cannot perform this action.");
-        }
-
-        // 2. Find and validate the channel
-        Channel channel = channelRepository.findById(channelId)
-                .orElseThrow(() -> new IllegalArgumentException("Channel not found"));
-
-        // 3. Check if workspace is suspended
-        if (channel.getWorkspace().getSuspended()) {
-            throw new IllegalArgumentException("Cannot manage members in a suspended workspace");
-        }
-
-        // 4. Check if current user is the channel creator or removing themselves
-        User userToRemove = userRepository.findById(userId)
-                .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + userId));
-
-        boolean isCreator = channel.getCreator().getId().equals(currentUser.getId());
-        boolean isRemovingSelf = currentUser.getId().equals(userToRemove.getId());
-
-        if (!isCreator && !isRemovingSelf) {
-            throw new UserAccessDeniedException("Only the channel creator or the user themselves can remove members");
-        }
-
-        // 5. Check if user is a member of the channel
-        if (!channel.getMembers().contains(userToRemove)) {
-            throw new IllegalArgumentException("User is not a member of this channel");
-        }
-
-        // 6. Remove the user from the channel
-        channel.getMembers().remove(userToRemove);
-        Channel savedChannel = channelRepository.save(channel);
-        log.info("Member {} removed from channel ID: {} successfully", userId, channelId);
-
-        return convertToResponseDTO(savedChannel);
     }
 
     private void checkChannelAccess(Channel channel, User user) {
@@ -458,6 +343,26 @@ public class ChannelServiceImpl implements ChannelService {
         log.info("Channel access verified for user: {} on channel: {}", user.getEmail(), channel.getId());
     }
 
+    /**
+     * Check if a user is the channel owner (either channel creator or workspace owner)
+     * @param channel the channel to check ownership for
+     * @param user the user to check
+     * @return true if user is channel creator or workspace owner, false otherwise
+     */
+    private boolean isChannelOwner(Channel channel, User user) {
+        // Check if user is the channel creator
+        if (channel.getCreator().getId().equals(user.getId())) {
+            return true;
+        }
+
+        // Check if user is the workspace owner
+        if (channel.getWorkspace().getOwner().getId().equals(user.getId())) {
+            return true;
+        }
+
+        return false;
+    }
+
     private ChannelResponseDTO convertToResponseDTO(Channel channel) {
         return ChannelResponseDTO.builder()
                 .id(channel.getId())
@@ -468,6 +373,10 @@ public class ChannelServiceImpl implements ChannelService {
                 .isPrivate(channel.getIsPrivate())
                 .creatorId(channel.getCreator().getId())
                 .creatorName(channel.getCreator().getName())
+                .creatorEmail(channel.getCreator().getEmail())
+                .workspaceOwnerId(channel.getWorkspace().getOwner().getId())
+                .workspaceOwnerName(channel.getWorkspace().getOwner().getName())
+                .workspaceOwnerEmail(channel.getWorkspace().getOwner().getEmail())
                 .memberCount(channel.getMembers().size())
                 .createdAt(channel.getCreatedAt())
                 .updatedAt(channel.getUpdatedAt())

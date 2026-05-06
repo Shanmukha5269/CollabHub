@@ -19,8 +19,4 @@ public interface ChannelService {
     ChannelResponseDTO updateChannel(Long channelId, UpdateChannelDTO updateChannelDTO, String userEmail);
 
     void deleteChannel(Long channelId, String userEmail);
-
-    ChannelResponseDTO addMemberToChannel(Long channelId, Long userId, String currentUserEmail);
-
-    ChannelResponseDTO removeMemberFromChannel(Long channelId, Long userId, String currentUserEmail);
 }
