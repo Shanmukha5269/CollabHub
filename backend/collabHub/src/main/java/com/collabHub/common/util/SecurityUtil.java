@@ -19,13 +19,4 @@ public class SecurityUtil {
         }
         return null;
     }
-
-    /**
-     * Check if the current user is authenticated
-     * @return true if user is authenticated
-     */
-    public static boolean isAuthenticated() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        return authentication != null && authentication.isAuthenticated();
-    }
 }
