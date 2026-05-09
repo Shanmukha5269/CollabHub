@@ -7,6 +7,7 @@ import com.collabHub.channel.entity.Channel;
 import com.collabHub.channel.entity.Message;
 import com.collabHub.channel.repository.ChannelRepository;
 import com.collabHub.channel.repository.MessageRepository;
+import com.collabHub.channel.websocket.RawWebSocketHandler;
 import com.collabHub.common.exception.*;
 import com.collabHub.user.entity.User;
 import com.collabHub.user.entity.UserStatus;
@@ -15,6 +16,8 @@ import com.collabHub.workspace.entity.Workspace;
 import com.collabHub.workspace.repository.WorkspaceMemberRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import tools.jackson.databind.ObjectMapper;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -34,6 +37,8 @@ public class MessageServiceImpl implements MessageService {
     private final ChannelRepository channelRepository;
     private final UserRepository userRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
+    private final RawWebSocketHandler rawWebSocketHandler;
+    private final ObjectMapper objectMapper;
 
     @Override
     public MessageResponseDTO sendMessage(Long channelId, CreateMessageDTO createMessageDTO, String senderEmail) {
@@ -130,7 +135,24 @@ public class MessageServiceImpl implements MessageService {
         Message savedMessage = messageRepository.save(message);
         log.info("Message sent successfully with ID: {}", savedMessage.getId());
 
-        return convertToResponseDTO(savedMessage);
+        // return convertToResponseDTO(savedMessage);
+
+        MessageResponseDTO responseDTO = convertToResponseDTO(savedMessage);
+
+        // Broadcast realtime update
+        try {
+        
+            String json =
+                    objectMapper.writeValueAsString(responseDTO);
+        
+            rawWebSocketHandler.broadcast(json);
+        
+        } catch (Exception e) {
+        
+            log.error("Failed to broadcast websocket message", e);
+        }
+
+        return responseDTO;
     }
 
     @Override
@@ -285,7 +307,24 @@ public class MessageServiceImpl implements MessageService {
         Message updatedMessage = messageRepository.save(message);
         log.info("Message edited successfully with ID: {}", updatedMessage.getId());
 
-        return convertToResponseDTO(updatedMessage);
+        // return convertToResponseDTO(updatedMessage);
+
+        MessageResponseDTO responseDTO = convertToResponseDTO(updatedMessage);
+
+        // Broadcast realtime update
+        try {
+        
+            String json =
+                    objectMapper.writeValueAsString(responseDTO);
+        
+            rawWebSocketHandler.broadcast(json);
+        
+        } catch (Exception e) {
+        
+            log.error("Failed to broadcast websocket message", e);
+        }
+
+        return responseDTO;
     }
 
     @Override
