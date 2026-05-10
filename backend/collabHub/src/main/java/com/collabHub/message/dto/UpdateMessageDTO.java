@@ -1,4 +1,4 @@
-package com.collabHub.channel.dto;
+package com.collabHub.message.dto;
 
 import jakarta.validation.constraints.Size;
 import lombok.*;

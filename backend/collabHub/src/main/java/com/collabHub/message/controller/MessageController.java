@@ -1,9 +1,9 @@
-package com.collabHub.channel.controller;
+package com.collabHub.message.controller;
 
-import com.collabHub.channel.dto.CreateMessageDTO;
-import com.collabHub.channel.dto.MessageResponseDTO;
-import com.collabHub.channel.dto.UpdateMessageDTO;
-import com.collabHub.channel.service.MessageService;
+import com.collabHub.message.dto.CreateMessageDTO;
+import com.collabHub.message.dto.MessageResponseDTO;
+import com.collabHub.message.dto.UpdateMessageDTO;
+import com.collabHub.message.service.MessageService;
 import com.collabHub.common.util.SecurityUtil;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

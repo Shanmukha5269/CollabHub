@@ -1,13 +1,13 @@
-package com.collabHub.channel.service;
+package com.collabHub.message.service;
 
-import com.collabHub.channel.dto.CreateMessageDTO;
-import com.collabHub.channel.dto.MessageResponseDTO;
-import com.collabHub.channel.dto.UpdateMessageDTO;
+import com.collabHub.message.dto.CreateMessageDTO;
+import com.collabHub.message.dto.MessageResponseDTO;
+import com.collabHub.message.dto.UpdateMessageDTO;
 import com.collabHub.channel.entity.Channel;
-import com.collabHub.channel.entity.Message;
+import com.collabHub.message.entity.Message;
 import com.collabHub.channel.repository.ChannelRepository;
-import com.collabHub.channel.repository.MessageRepository;
-import com.collabHub.channel.websocket.RawWebSocketHandler;
+import com.collabHub.message.repository.MessageRepository;
+import com.collabHub.message.websocket.RawWebSocketHandler;
 import com.collabHub.common.exception.*;
 import com.collabHub.user.entity.User;
 import com.collabHub.user.entity.UserStatus;
@@ -142,8 +142,7 @@ public class MessageServiceImpl implements MessageService {
         // Broadcast realtime update
         try {
         
-            String json =
-                    objectMapper.writeValueAsString(responseDTO);
+            String json = objectMapper.writeValueAsString(responseDTO);
         
             rawWebSocketHandler.broadcast(json);
         
@@ -314,8 +313,7 @@ public class MessageServiceImpl implements MessageService {
         // Broadcast realtime update
         try {
         
-            String json =
-                    objectMapper.writeValueAsString(responseDTO);
+            String json = objectMapper.writeValueAsString(responseDTO);
         
             rawWebSocketHandler.broadcast(json);
         

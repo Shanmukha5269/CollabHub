@@ -1,8 +1,8 @@
-package com.collabHub.channel.service;
+package com.collabHub.message.service;
 
-import com.collabHub.channel.dto.CreateMessageDTO;
-import com.collabHub.channel.dto.MessageResponseDTO;
-import com.collabHub.channel.dto.UpdateMessageDTO;
+import com.collabHub.message.dto.CreateMessageDTO;
+import com.collabHub.message.dto.MessageResponseDTO;
+import com.collabHub.message.dto.UpdateMessageDTO;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 

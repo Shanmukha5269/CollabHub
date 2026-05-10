@@ -1,10 +1,11 @@
-package com.collabHub.channel.entity;
+package com.collabHub.message.entity;
 
 import com.collabHub.user.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import com.collabHub.channel.entity.Channel;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;

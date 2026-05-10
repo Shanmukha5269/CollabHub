@@ -1,6 +1,6 @@
-package com.collabHub.channel.repository;
+package com.collabHub.message.repository;
 
-import com.collabHub.channel.entity.Message;
+import com.collabHub.message.entity.Message;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;

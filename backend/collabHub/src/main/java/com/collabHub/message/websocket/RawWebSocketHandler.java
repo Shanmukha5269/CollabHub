@@ -1,4 +1,4 @@
-package com.collabHub.channel.websocket;
+package com.collabHub.message.websocket;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,8 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class RawWebSocketHandler extends TextWebSocketHandler {
 
     // Connected websocket clients
-    private final Set<WebSocketSession> sessions =
-            ConcurrentHashMap.newKeySet();
+    private final Set<WebSocketSession> sessions = ConcurrentHashMap.newKeySet();
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
