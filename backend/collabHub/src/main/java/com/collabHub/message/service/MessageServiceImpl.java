@@ -349,6 +349,16 @@ public class MessageServiceImpl implements MessageService {
         // 4. Delete the message
         messageRepository.delete(message);
         log.info("Message deleted successfully with ID: {}", messageId);
+
+        // Broadcast realtime update
+        try {
+        
+            rawWebSocketHandler.broadcast("Message deleted successfully");
+        
+        } catch (Exception e) {
+        
+            log.error("Failed to broadcast websocket message", e);
+        }
     }
 
     @Override
