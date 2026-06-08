@@ -7,7 +7,7 @@ import com.collabHub.channel.entity.Channel;
 import com.collabHub.message.entity.Message;
 import com.collabHub.channel.repository.ChannelRepository;
 import com.collabHub.message.repository.MessageRepository;
-import com.collabHub.message.websocket.RawWebSocketHandler;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import com.collabHub.common.exception.*;
 import com.collabHub.user.entity.User;
 import com.collabHub.user.entity.UserStatus;
@@ -37,7 +37,7 @@ public class MessageServiceImpl implements MessageService {
     private final ChannelRepository channelRepository;
     private final UserRepository userRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
-    private final RawWebSocketHandler rawWebSocketHandler;
+    private final SimpMessagingTemplate messagingTemplate;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -144,7 +144,7 @@ public class MessageServiceImpl implements MessageService {
         
             String json = objectMapper.writeValueAsString(responseDTO);
         
-            rawWebSocketHandler.broadcast(json);
+            messagingTemplate.convertAndSend("/topic/messages", json);
         
         } catch (Exception e) {
         
@@ -315,7 +315,7 @@ public class MessageServiceImpl implements MessageService {
         
             String json = objectMapper.writeValueAsString(responseDTO);
         
-            rawWebSocketHandler.broadcast(json);
+            messagingTemplate.convertAndSend("/topic/messages", json);
         
         } catch (Exception e) {
         
@@ -353,7 +353,7 @@ public class MessageServiceImpl implements MessageService {
         // Broadcast realtime update
         try {
         
-            rawWebSocketHandler.broadcast("Message deleted successfully");
+            messagingTemplate.convertAndSend("/topic/messages", "Message deleted successfully");
         
         } catch (Exception e) {
         
