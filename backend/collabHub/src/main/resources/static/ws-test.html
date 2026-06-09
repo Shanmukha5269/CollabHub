@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>WebSocket STOMP Test</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    label { display: block; margin-top: 10px; }
+    input, textarea, button { width: 100%; max-width: 520px; padding: 8px; margin-top: 4px; }
+    .box { border: 1px solid #ccc; padding: 10px; margin-top: 10px; background: #f8f8f8; }
+    #log { max-height: 320px; overflow-y: auto; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <h1>WebSocket STOMP Test</h1>
+  <p>Use this page to connect to the app's WebSocket endpoint and subscribe to <code>/topic/messages</code>.</p>
+
+  <hr />
+  <h2>Step 1: Login (to get JWT token)</h2>
+  <label>Login Email</label>
+  <input id="loginEmail" placeholder="user@example.com" />
+
+  <label>Login Password</label>
+  <input id="loginPassword" type="password" placeholder="password" />
+
+  <button id="loginButton">Login</button>
+  <div id="tokenBox" style="margin-top: 10px; display: none;">
+    <strong>JWT Token:</strong>
+    <textarea id="displayToken" readonly style="width: 100%; height: 80px;"></textarea>
+    <button id="copyTokenButton">Copy Token</button>
+  </div>
+
+  <hr />
+  <h2>Step 2: Connect WebSocket</h2>
+
+  <label>WebSocket endpoint</label>
+  <input id="endpoint" value="ws://localhost:8800/ws/messaging" />
+
+  <button id="connectButton">Connect</button>
+  <button id="disconnectButton" disabled>Disconnect</button>
+  <button id="subscribeButton" disabled>Subscribe</button>
+
+  <label>Destination to subscribe</label>
+  <input id="destination" value="/topic/messages" />
+
+  <hr />
+  <h2>Step 3: Send HTTP Message</h2>
+  <p><strong>Note:</strong> Paste your JWT token from Step 1. The backend identifies the sender from the token.</p>
+
+  <label>JWT Token</label>
+  <input id="token" placeholder="Paste JWT token from Step 1" />
+
+  <label>Channel ID for HTTP send</label>
+  <input id="channelId" placeholder="Channel ID" />
+
+  <label>Message content</label>
+  <textarea id="messageText" rows="3">Hello from browser test</textarea>
+
+  <button id="sendHttpButton">Send HTTP POST to /api/channels/{channelId}/messages</button>
+
+  <hr />
+  <h2>Step 4: Edit/Delete/React to Messages</h2>
+  <p>After you receive a message, you can perform operations on it. Message IDs are automatically captured.</p>
+
+  <label>Message ID (auto-filled from subscription)</label>
+  <input id="messageId" placeholder="Message ID" readonly />
+
+  <label>Edit Message Content</label>
+  <textarea id="editMessageText" rows="2" placeholder="New content for message"></textarea>
+  <button id="editButton">Edit Message</button>
+
+  <button id="deleteButton">Delete Message</button>
+
+  <label>Add Reaction (emoji)</label>
+  <input id="reactionEmoji" placeholder="😀" maxlength="1" />
+  <button id="addReactionButton">Add Reaction</button>
+  <button id="removeReactionButton">Remove Reaction</button>
+
+  <div class="box">
+    <strong>Status:</strong>
+    <div id="status">Disconnected</div>
+  </div>
+  <div class="box">
+    <strong>Log:</strong>
+    <div id="log"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+  <script>
+    const statusEl = document.getElementById('status');
+    const logEl = document.getElementById('log');
+    const endpointEl = document.getElementById('endpoint');
+    const destinationEl = document.getElementById('destination');
+    const tokenEl = document.getElementById('token');
+    const channelIdEl = document.getElementById('channelId');
+    const messageTextEl = document.getElementById('messageText');
+    const loginEmailEl = document.getElementById('loginEmail');
+    const loginPasswordEl = document.getElementById('loginPassword');
+    const displayTokenEl = document.getElementById('displayToken');
+    const tokenBoxEl = document.getElementById('tokenBox');
+    const messageIdEl = document.getElementById('messageId');
+    const editMessageTextEl = document.getElementById('editMessageText');
+    const reactionEmojiEl = document.getElementById('reactionEmoji');
+
+    let stompClient = null;
+    let socket = null;
+    let currentChannelId = null;
+
+    function appendLog(message) {
+      const line = document.createElement('div');
+      line.textContent = message;
+      logEl.appendChild(line);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function setStatus(value) {
+      statusEl.textContent = value;
+    }
+
+    // Login button handler
+    document.getElementById('loginButton').addEventListener('click', async () => {
+      const email = loginEmailEl.value.trim();
+      const password = loginPasswordEl.value.trim();
+      if (!email || !password) {
+        appendLog('Email and password are required for login.');
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+        const data = await response.json();
+        const token = data?.data?.token;
+        if (response.ok && token) {
+          appendLog('Login successful! Token retrieved.');
+          displayTokenEl.value = token;
+          tokenEl.value = token;
+          tokenBoxEl.style.display = 'block';
+        } else {
+          appendLog('Login failed: ' + (data?.message || response.statusText));
+        }
+      } catch (err) {
+        appendLog('Login error: ' + err.message);
+      }
+    });
+
+    // Copy token button
+    document.getElementById('copyTokenButton').addEventListener('click', () => {
+      displayTokenEl.select();
+      document.execCommand('copy');
+      appendLog('Token copied to clipboard');
+    });
+
+    document.getElementById('connectButton').addEventListener('click', () => {
+      const url = endpointEl.value.trim();
+      if (!url) return;
+
+      socket = new WebSocket(url);
+      stompClient = Stomp.over(socket);
+      stompClient.debug = (msg) => appendLog('[DEBUG] ' + msg);
+
+      stompClient.connect({}, (frame) => {
+        setStatus('Connected');
+        appendLog('Connected: ' + frame);
+        document.getElementById('disconnectButton').disabled = false;
+        document.getElementById('subscribeButton').disabled = false;
+      }, (error) => {
+        setStatus('Error');
+        appendLog('Connection error: ' + JSON.stringify(error));
+      });
+    });
+
+    document.getElementById('disconnectButton').addEventListener('click', () => {
+      if (stompClient && stompClient.connected) {
+        stompClient.disconnect(() => {
+          setStatus('Disconnected');
+          appendLog('Disconnected successfully');
+          document.getElementById('disconnectButton').disabled = true;
+          document.getElementById('subscribeButton').disabled = true;
+        });
+      }
+    });
+
+    document.getElementById('subscribeButton').addEventListener('click', () => {
+      if (!stompClient || !stompClient.connected) {
+        appendLog('Not connected. Connect first.');
+        return;
+      }
+      const dest = destinationEl.value.trim();
+      stompClient.subscribe(dest, (message) => {
+        try {
+          const msg = JSON.parse(message.body);
+          if (msg.id) {
+            messageIdEl.value = msg.id;
+            currentChannelId = msg.channel?.id;
+            appendLog('[RECEIVED] Message ID: ' + msg.id + ' | Content: ' + msg.content);
+          } else {
+            appendLog('[RECEIVED] ' + message.body);
+          }
+        } catch (e) {
+          appendLog('[RECEIVED] ' + message.body);
+        }
+      });
+      appendLog('Subscribed to ' + dest);
+    });
+
+    document.getElementById('sendHttpButton').addEventListener('click', async () => {
+      const channelId = channelIdEl.value.trim();
+      const content = messageTextEl.value.trim();
+      const token = tokenEl.value.trim();
+
+      if (!channelId || !content) {
+        appendLog('Channel ID and message content are required for HTTP send.');
+        return;
+      }
+
+      if (!token) {
+        appendLog('JWT token is required. Please login first (Step 1).');
+        return;
+      }
+
+      currentChannelId = channelId;
+
+      const url = '/api/channels/' + encodeURIComponent(channelId) + '/messages';
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      };
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ content })
+        });
+        const body = await response.text();
+        appendLog('HTTP send response: ' + response.status + ' ' + body);
+      } catch (err) {
+        appendLog('HTTP send error: ' + err.message);
+      }
+    });
+
+    // Edit Message
+    document.getElementById('editButton').addEventListener('click', async () => {
+      const channelId = currentChannelId || channelIdEl.value.trim();
+      const msgId = messageIdEl.value.trim();
+      const content = editMessageTextEl.value.trim();
+      const token = tokenEl.value.trim();
+
+      if (!msgId || !content) {
+        appendLog('Message ID and new content are required.');
+        return;
+      }
+
+      if (!channelId) {
+        appendLog('Channel ID not found. Send or receive a message first.');
+        return;
+      }
+
+      const url = '/api/channels/' + encodeURIComponent(channelId) + '/messages/' + encodeURIComponent(msgId);
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      };
+
+      try {
+        const response = await fetch(url, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({ content })
+        });
+        const body = await response.text();
+        appendLog('Edit response: ' + response.status + ' ' + body);
+      } catch (err) {
+        appendLog('Edit error: ' + err.message);
+      }
+    });
+
+    // Delete Message
+    document.getElementById('deleteButton').addEventListener('click', async () => {
+      const channelId = currentChannelId || channelIdEl.value.trim();
+      const msgId = messageIdEl.value.trim();
+      const token = tokenEl.value.trim();
+
+      if (!msgId) {
+        appendLog('Message ID is required.');
+        return;
+      }
+
+      if (!channelId) {
+        appendLog('Channel ID not found. Send or receive a message first.');
+        return;
+      }
+
+      const url = '/api/channels/' + encodeURIComponent(channelId) + '/messages/' + encodeURIComponent(msgId);
+      const headers = {
+        'Authorization': 'Bearer ' + token
+      };
+
+      try {
+        const response = await fetch(url, {
+          method: 'DELETE',
+          headers
+        });
+        appendLog('Delete response: ' + response.status);
+      } catch (err) {
+        appendLog('Delete error: ' + err.message);
+      }
+    });
+
+    // Add Reaction
+    document.getElementById('addReactionButton').addEventListener('click', async () => {
+      const channelId = currentChannelId || channelIdEl.value.trim();
+      const msgId = messageIdEl.value.trim();
+      const emoji = reactionEmojiEl.value.trim();
+      const token = tokenEl.value.trim();
+
+      if (!msgId || !emoji) {
+        appendLog('Message ID and emoji are required.');
+        return;
+      }
+
+      if (!channelId) {
+        appendLog('Channel ID not found. Send or receive a message first.');
+        return;
+      }
+
+      const url = '/api/channels/' + encodeURIComponent(channelId) + '/messages/' + encodeURIComponent(msgId) + '/reactions/' + encodeURIComponent(emoji);
+      const headers = {
+        'Authorization': 'Bearer ' + token
+      };
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers
+        });
+        const body = await response.text();
+        appendLog('Add reaction response: ' + response.status + ' ' + body);
+      } catch (err) {
+        appendLog('Add reaction error: ' + err.message);
+      }
+    });
+
+    // Remove Reaction
+    document.getElementById('removeReactionButton').addEventListener('click', async () => {
+      const channelId = currentChannelId || channelIdEl.value.trim();
+      const msgId = messageIdEl.value.trim();
+      const emoji = reactionEmojiEl.value.trim();
+      const token = tokenEl.value.trim();
+
+      if (!msgId || !emoji) {
+        appendLog('Message ID and emoji are required.');
+        return;
+      }
+
+      if (!channelId) {
+        appendLog('Channel ID not found. Send or receive a message first.');
+        return;
+      }
+
+      const url = '/api/channels/' + encodeURIComponent(channelId) + '/messages/' + encodeURIComponent(msgId) + '/reactions/' + encodeURIComponent(emoji);
+      const headers = {
+        'Authorization': 'Bearer ' + token
+      };
+
+      try {
+        const response = await fetch(url, {
+          method: 'DELETE',
+          headers
+        });
+        const body = await response.text();
+        appendLog('Remove reaction response: ' + response.status + ' ' + body);
+      } catch (err) {
+        appendLog('Remove reaction error: ' + err.message);
+      }
+    });
+  </script>
+</body>
+</html>
