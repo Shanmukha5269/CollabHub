@@ -6,6 +6,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import com.collabHub.common.exception.ProjectNotFoundException;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -80,5 +81,15 @@ public class GlobalExceptionHandler {
         response.put("error", ex.getMessage());
         response.put("status", HttpStatus.INTERNAL_SERVER_ERROR.value());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+    }
+
+    @ExceptionHandler(ProjectNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleProjectNotFound(ProjectNotFoundException ex) {
+        log.warn("Project not found: {}", ex.getMessage());
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("message", ex.getMessage());
+        response.put("status", HttpStatus.NOT_FOUND.value());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
     }
 }

@@ -71,11 +71,6 @@
 
   <button id="deleteButton">Delete Message</button>
 
-  <label>Add Reaction (emoji)</label>
-  <input id="reactionEmoji" placeholder="😀" maxlength="1" />
-  <button id="addReactionButton">Add Reaction</button>
-  <button id="removeReactionButton">Remove Reaction</button>
-
   <div class="box">
     <strong>Status:</strong>
     <div id="status">Disconnected</div>
@@ -100,7 +95,6 @@
     const tokenBoxEl = document.getElementById('tokenBox');
     const messageIdEl = document.getElementById('messageId');
     const editMessageTextEl = document.getElementById('editMessageText');
-    const reactionEmojiEl = document.getElementById('reactionEmoji');
 
     let stompClient = null;
     let socket = null;
@@ -308,74 +302,6 @@
         appendLog('Delete response: ' + response.status);
       } catch (err) {
         appendLog('Delete error: ' + err.message);
-      }
-    });
-
-    // Add Reaction
-    document.getElementById('addReactionButton').addEventListener('click', async () => {
-      const channelId = currentChannelId || channelIdEl.value.trim();
-      const msgId = messageIdEl.value.trim();
-      const emoji = reactionEmojiEl.value.trim();
-      const token = tokenEl.value.trim();
-
-      if (!msgId || !emoji) {
-        appendLog('Message ID and emoji are required.');
-        return;
-      }
-
-      if (!channelId) {
-        appendLog('Channel ID not found. Send or receive a message first.');
-        return;
-      }
-
-      const url = '/api/channels/' + encodeURIComponent(channelId) + '/messages/' + encodeURIComponent(msgId) + '/reactions/' + encodeURIComponent(emoji);
-      const headers = {
-        'Authorization': 'Bearer ' + token
-      };
-
-      try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers
-        });
-        const body = await response.text();
-        appendLog('Add reaction response: ' + response.status + ' ' + body);
-      } catch (err) {
-        appendLog('Add reaction error: ' + err.message);
-      }
-    });
-
-    // Remove Reaction
-    document.getElementById('removeReactionButton').addEventListener('click', async () => {
-      const channelId = currentChannelId || channelIdEl.value.trim();
-      const msgId = messageIdEl.value.trim();
-      const emoji = reactionEmojiEl.value.trim();
-      const token = tokenEl.value.trim();
-
-      if (!msgId || !emoji) {
-        appendLog('Message ID and emoji are required.');
-        return;
-      }
-
-      if (!channelId) {
-        appendLog('Channel ID not found. Send or receive a message first.');
-        return;
-      }
-
-      const url = '/api/channels/' + encodeURIComponent(channelId) + '/messages/' + encodeURIComponent(msgId) + '/reactions/' + encodeURIComponent(emoji);
-      const headers = {
-        'Authorization': 'Bearer ' + token
-      };
-
-      try {
-        const response = await fetch(url, {
-          method: 'DELETE',
-          headers
-        });
-        const body = await response.text();
-        appendLog('Remove reaction response: ' + response.status + ' ' + body);
-      } catch (err) {
-        appendLog('Remove reaction error: ' + err.message);
       }
     });
   </script>
