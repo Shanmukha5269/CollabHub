@@ -1,6 +1,7 @@
 package com.collabHub.issue.entity;
 
 import com.collabHub.project.entity.Project;
+import com.collabHub.sprint.entity.Sprint;
 import com.collabHub.user.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
@@ -78,6 +79,16 @@ public class Issue {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "assignee_id")
     private User assignee;
+
+    /**
+     * Sprint this issue belongs to.
+     * Nullable — null means the issue is in the backlog (not part of any sprint).
+     * Set when the issue is added to a sprint via SprintService.addIssueToSprint().
+     * Cleared back to null when a sprint completes and the issue wasn't finished.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "sprint_id")
+    private Sprint sprint;
 
     /**
      * Optional due date for the issue.

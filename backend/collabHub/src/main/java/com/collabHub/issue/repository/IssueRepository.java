@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -72,4 +73,64 @@ public interface IssueRepository extends JpaRepository<Issue, Long> {
      */
     @Query("SELECT COUNT(i) FROM Issue i WHERE i.project.id = :projectId")
     Long countByProjectId(@Param("projectId") Long projectId);
+
+    // -------------------------------------------------------------------------
+    // New queries added for Sprint / Board (Phase 3)
+    // -------------------------------------------------------------------------
+
+    /**
+     * All issues in a sprint, ordered by position — used to populate board columns.
+     * JOIN FETCH reporter/assignee/project to avoid N+1 queries when building BoardResponseDTO.
+     *
+     * Why JOIN FETCH here?
+     * The board endpoint calls convertToResponseDTO() for every issue, which accesses
+     * reporter.getName(), assignee.getName(), project.getName() etc.
+     * Without JOIN FETCH, each access fires a separate SQL query (N+1 problem).
+     * One query with joins is far more efficient.
+     */
+    @Query("SELECT i FROM Issue i " +
+            "LEFT JOIN FETCH i.reporter " +
+            "LEFT JOIN FETCH i.assignee " +
+            "LEFT JOIN FETCH i.project " +
+            "WHERE i.sprint.id = :sprintId " +
+            "AND i.status = :status " +
+            "ORDER BY i.position ASC")
+    List<Issue> findBySprintIdAndStatus(
+            @Param("sprintId") Long sprintId,
+            @Param("status") IssueStatus status);
+
+    /**
+     * All issues in a sprint regardless of status — used by completeSprint()
+     * to find incomplete issues and move them back to the backlog.
+     */
+    @Query("SELECT i FROM Issue i WHERE i.sprint.id = :sprintId")
+    List<Issue> findBySprintId(@Param("sprintId") Long sprintId);
+
+    /**
+     * Count issues in a sprint by status — used to build SprintResponseDTO stats.
+     */
+    @Query("SELECT COUNT(i) FROM Issue i WHERE i.sprint.id = :sprintId AND i.status = :status")
+    Long countBySprintIdAndStatus(@Param("sprintId") Long sprintId, @Param("status") IssueStatus status);
+
+    /**
+     * Total issues in a sprint — used for SprintResponseDTO.issueCount.
+     */
+    @Query("SELECT COUNT(i) FROM Issue i WHERE i.sprint.id = :sprintId")
+    Long countBySprintId(@Param("sprintId") Long sprintId);
+
+    /**
+     * Backlog issues — issues in a project with no sprint assigned.
+     * Used when no active sprint exists: board shows the backlog.
+     */
+    @Query("SELECT i FROM Issue i " +
+            "LEFT JOIN FETCH i.reporter " +
+            "LEFT JOIN FETCH i.assignee " +
+            "LEFT JOIN FETCH i.project " +
+            "WHERE i.project.id = :projectId " +
+            "AND i.sprint IS NULL " +
+            "AND i.status = :status " +
+            "ORDER BY i.position ASC")
+    List<Issue> findBacklogByProjectIdAndStatus(
+            @Param("projectId") Long projectId,
+            @Param("status") IssueStatus status);
 }

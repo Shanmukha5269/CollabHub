@@ -102,4 +102,14 @@ public class GlobalExceptionHandler {
         response.put("status", HttpStatus.NOT_FOUND.value());
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
     }
+
+    @ExceptionHandler(SprintNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleSprintNotFound(SprintNotFoundException ex) {
+        log.warn("Sprint not found: {}", ex.getMessage());
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("message", ex.getMessage());
+        response.put("status", HttpStatus.NOT_FOUND.value());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+    }
 }
