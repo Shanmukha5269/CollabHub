@@ -36,6 +36,21 @@ public class Message {
     @JoinColumn(name = "sender_id", nullable = false)
     private User sender;
 
+    /**
+     * Optional reference to a Jira issue by its key (e.g. "COLL-1").
+     *
+     * WHY a String key and not a FK to the Issue table?
+     * A FK would tightly couple the Message module to the Issue module.
+     * If an issue is deleted, the FK would break or cascade-delete messages.
+     * Using the key as a plain String keeps the modules independent —
+     * the same way Slack stores issue references as text, not DB relations.
+     * The frontend uses this key to fetch the issue separately if needed.
+     *
+     * Nullable — most messages won't be linked to an issue.
+     */
+    @Column(name = "related_issue_key", length = 20)
+    private String relatedIssueKey;
+
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;
@@ -56,9 +71,9 @@ public class Message {
 
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
-        name = "message_mentions",
-        joinColumns = @JoinColumn(name = "message_id"),
-        inverseJoinColumns = @JoinColumn(name = "user_id")
+            name = "message_mentions",
+            joinColumns = @JoinColumn(name = "message_id"),
+            inverseJoinColumns = @JoinColumn(name = "user_id")
     )
     @Builder.Default
     private Set<User> mentions = new HashSet<>();

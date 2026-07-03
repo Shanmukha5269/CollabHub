@@ -20,8 +20,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.ObjectMapper;
 
 @Service
 @RequiredArgsConstructor
@@ -33,6 +35,9 @@ public class IssueServiceImpl implements IssueService {
     private final UserRepository userRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
 
+    private final SimpMessagingTemplate messagingTemplate;
+    private final ObjectMapper objectMapper;
+
     // -------------------------------------------------------------------------
     // Create
     // -------------------------------------------------------------------------
@@ -42,10 +47,7 @@ public class IssueServiceImpl implements IssueService {
     public IssueResponseDTO createIssue(Long projectId, CreateIssueDTO dto, String reporterEmail) {
         log.info("Creating issue in project: {} by user: {}", projectId, reporterEmail);
 
-        // 1. Validate reporter
         User reporter = findActiveUser(reporterEmail);
-
-        // 2. Validate project
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ProjectNotFoundException("Project not found with ID: " + projectId));
 
@@ -53,31 +55,19 @@ public class IssueServiceImpl implements IssueService {
             throw new WorkspaceSuspendedException("Cannot create issues in a suspended workspace");
         }
 
-        // 3. Reporter must be a workspace member
         requireWorkspaceMember(project.getWorkspace().getId(), reporter.getId());
 
-        // 4. Resolve optional assignee
         User assignee = resolveOptionalAssignee(dto.getAssigneeId(), project);
 
-        // 5. Generate atomic issue key — e.g. "COLL-1", "COLL-2"
-        //
-        // WHY @Transactional + pessimistic locking matters here:
-        // If two users create issues at the same millisecond, both could read
-        // issueCounter = 5, both increment to 6, and both save "COLL-6" —
-        // a duplicate key. The @Transactional annotation on this method ensures
-        // the increment + save is one atomic DB operation, preventing this race.
         int newCounter = project.getIssueCounter() + 1;
         project.setIssueCounter(newCounter);
         projectRepository.save(project);
 
         String issueKey = project.getProjectKey() + "-" + newCounter;
 
-        // 6. Calculate position for ordering (gap-based: 1000, 2000, 3000)
-        //    New issues go to the bottom of the TODO column by default.
         long existingCount = issueRepository.countByProjectId(projectId);
         int position = (int) ((existingCount + 1) * 1000);
 
-        // 7. Build and save the issue
         Issue issue = Issue.builder()
                 .issueKey(issueKey)
                 .title(dto.getTitle())
@@ -95,11 +85,24 @@ public class IssueServiceImpl implements IssueService {
         Issue saved = issueRepository.save(issue);
         log.info("Issue created: {} (ID: {})", saved.getIssueKey(), saved.getId());
 
-        return convertToResponseDTO(saved);
+        IssueResponseDTO responseDTO = convertToResponseDTO(saved);
+
+        // Broadcast to all subscribers of this project's topic.
+        //
+        // Topic: /topic/projects/{projectId}
+        // This is the same pattern as MessageServiceImpl which broadcasts to /topic/messages.
+        // The difference is we scope it per-project so clients only receive
+        // updates for projects they are subscribed to — not every project's updates.
+        //
+        // Payload includes an "event" field so the frontend knows
+        // whether to add, update, or remove the issue from the board.
+        broadcastIssueEvent(project.getId(), "ISSUE_CREATED", responseDTO);
+
+        return responseDTO;
     }
 
     // -------------------------------------------------------------------------
-    // Read
+    // Read  (no broadcast — reads don't change state)
     // -------------------------------------------------------------------------
 
     @Override
@@ -135,63 +138,44 @@ public class IssueServiceImpl implements IssueService {
     @Override
     @Transactional(readOnly = true)
     public Page<IssueResponseDTO> getIssuesByProject(Long projectId, String userEmail, Pageable pageable) {
-        log.info("Fetching issues for project: {} page: {}", projectId, pageable.getPageNumber());
-
         User user = findActiveUser(userEmail);
         Project project = findAccessibleProject(projectId, user);
-
         return issueRepository.findByProjectIdPaginated(project.getId(), pageable)
                 .map(this::convertToResponseDTO);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Page<IssueResponseDTO> getIssuesByProjectAndStatus(
-            Long projectId, IssueStatus status, String userEmail, Pageable pageable) {
-        log.info("Fetching issues for project: {} status: {}", projectId, status);
-
+    public Page<IssueResponseDTO> getIssuesByProjectAndStatus(Long projectId, IssueStatus status, String userEmail, Pageable pageable) {
         User user = findActiveUser(userEmail);
         Project project = findAccessibleProject(projectId, user);
-
         return issueRepository.findByProjectIdAndStatus(project.getId(), status, pageable)
                 .map(this::convertToResponseDTO);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Page<IssueResponseDTO> getIssuesByProjectAndPriority(
-            Long projectId, IssuePriority priority, String userEmail, Pageable pageable) {
-        log.info("Fetching issues for project: {} priority: {}", projectId, priority);
-
+    public Page<IssueResponseDTO> getIssuesByProjectAndPriority(Long projectId, IssuePriority priority, String userEmail, Pageable pageable) {
         User user = findActiveUser(userEmail);
         Project project = findAccessibleProject(projectId, user);
-
         return issueRepository.findByProjectIdAndPriority(project.getId(), priority, pageable)
                 .map(this::convertToResponseDTO);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Page<IssueResponseDTO> getIssuesByProjectAndType(
-            Long projectId, IssueType type, String userEmail, Pageable pageable) {
-        log.info("Fetching issues for project: {} type: {}", projectId, type);
-
+    public Page<IssueResponseDTO> getIssuesByProjectAndType(Long projectId, IssueType type, String userEmail, Pageable pageable) {
         User user = findActiveUser(userEmail);
         Project project = findAccessibleProject(projectId, user);
-
         return issueRepository.findByProjectIdAndType(project.getId(), type, pageable)
                 .map(this::convertToResponseDTO);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Page<IssueResponseDTO> getIssuesByAssignee(
-            Long projectId, Long assigneeId, String userEmail, Pageable pageable) {
-        log.info("Fetching issues for project: {} assignee: {}", projectId, assigneeId);
-
+    public Page<IssueResponseDTO> getIssuesByAssignee(Long projectId, Long assigneeId, String userEmail, Pageable pageable) {
         User user = findActiveUser(userEmail);
         Project project = findAccessibleProject(projectId, user);
-
         return issueRepository.findByProjectIdAndAssigneeId(project.getId(), assigneeId, pageable)
                 .map(this::convertToResponseDTO);
     }
@@ -216,22 +200,11 @@ public class IssueServiceImpl implements IssueService {
 
         requireWorkspaceMember(issue.getProject().getWorkspace().getId(), user.getId());
 
-        // Apply only the fields that were provided — same partial-update pattern as editMessage
-        if (dto.getTitle() != null) {
-            issue.setTitle(dto.getTitle());
-        }
-        if (dto.getDescription() != null) {
-            issue.setDescription(dto.getDescription());
-        }
-        if (dto.getPriority() != null) {
-            issue.setPriority(dto.getPriority());
-        }
-        if (dto.getType() != null) {
-            issue.setType(dto.getType());
-        }
-        if (dto.getDueDate() != null) {
-            issue.setDueDate(dto.getDueDate());
-        }
+        if (dto.getTitle() != null)       issue.setTitle(dto.getTitle());
+        if (dto.getDescription() != null) issue.setDescription(dto.getDescription());
+        if (dto.getPriority() != null)    issue.setPriority(dto.getPriority());
+        if (dto.getType() != null)        issue.setType(dto.getType());
+        if (dto.getDueDate() != null)     issue.setDueDate(dto.getDueDate());
         if (dto.getAssigneeId() != null) {
             User newAssignee = resolveOptionalAssignee(dto.getAssigneeId(), issue.getProject());
             issue.setAssignee(newAssignee);
@@ -240,7 +213,12 @@ public class IssueServiceImpl implements IssueService {
         Issue saved = issueRepository.save(issue);
         log.info("Issue updated: {}", saved.getIssueKey());
 
-        return convertToResponseDTO(saved);
+        IssueResponseDTO responseDTO = convertToResponseDTO(saved);
+
+        // Broadcast update — same event pattern as ISSUE_CREATED
+        broadcastIssueEvent(saved.getProject().getId(), "ISSUE_UPDATED", responseDTO);
+
+        return responseDTO;
     }
 
     @Override
@@ -257,8 +235,6 @@ public class IssueServiceImpl implements IssueService {
             throw new WorkspaceSuspendedException("Cannot update issues in a suspended workspace");
         }
 
-        // Any workspace member can change status — not just the reporter.
-        // This matches Jira's behaviour where anyone on the team can move cards.
         requireWorkspaceMember(issue.getProject().getWorkspace().getId(), user.getId());
 
         issue.setStatus(dto.getStatus());
@@ -266,7 +242,13 @@ public class IssueServiceImpl implements IssueService {
         Issue saved = issueRepository.save(issue);
         log.info("Issue {} status updated to: {}", saved.getIssueKey(), saved.getStatus());
 
-        return convertToResponseDTO(saved);
+        IssueResponseDTO responseDTO = convertToResponseDTO(saved);
+
+        // Status change is the most frequent board event — broadcast immediately
+        // so all connected clients see the card move columns in real time
+        broadcastIssueEvent(saved.getProject().getId(), "ISSUE_STATUS_CHANGED", responseDTO);
+
+        return responseDTO;
     }
 
     // -------------------------------------------------------------------------
@@ -287,7 +269,6 @@ public class IssueServiceImpl implements IssueService {
             throw new WorkspaceSuspendedException("Cannot delete issues in a suspended workspace");
         }
 
-        // Only reporter or workspace owner can delete
         boolean isReporter = issue.getReporter().getId().equals(user.getId());
         boolean isWorkspaceOwner = issue.getProject().getWorkspace().getOwner().getId().equals(user.getId());
 
@@ -295,84 +276,124 @@ public class IssueServiceImpl implements IssueService {
             throw new UserAccessDeniedException("Only the issue reporter or workspace owner can delete this issue");
         }
 
+        Long projectId = issue.getProject().getId();
+        String issueKey = issue.getIssueKey();
+
         issueRepository.delete(issue);
         log.info("Issue deleted: {}", issueId);
+
+        // For deletes we broadcast a minimal payload — just the key is enough
+        // for the frontend to know which card to remove from the board
+        broadcastDeleteEvent(projectId, issueKey);
     }
 
     // -------------------------------------------------------------------------
-    // Private helpers — same style as ProjectServiceImpl / ChannelServiceImpl
+    // WebSocket broadcasting
     // -------------------------------------------------------------------------
 
     /**
-     * Find a user by email and run the three standard guards.
-     * Identical to the same helper in ProjectServiceImpl.
+     * Broadcast an issue create/update/status-change event to all subscribers
+     * of /topic/projects/{projectId}.
+     *
+     * WHY per-project topics instead of one global /topic/issues?
+     * MessageServiceImpl uses a single /topic/messages which means every client
+     * receives every message from every channel — wasteful.
+     * Per-project topics mean a client only receives events for projects
+     * they are viewing, which is more efficient and scalable.
+     *
+     * The payload wraps the issue DTO inside an envelope with an "event" field
+     * so the frontend knows what action to take:
+     *   ISSUE_CREATED      → add card to board
+     *   ISSUE_UPDATED      → update card in place
+     *   ISSUE_STATUS_CHANGED → move card to different column
+     *   ISSUE_DELETED      → remove card from board
      */
+    private void broadcastIssueEvent(Long projectId, String event, IssueResponseDTO issue) {
+        try {
+            // Build a simple envelope: { "event": "ISSUE_CREATED", "data": { ...issue } }
+            String payload = objectMapper.writeValueAsString(
+                    new java.util.HashMap<>() {{
+                        put("event", event);
+                        put("data", issue);
+                    }}
+            );
+
+            messagingTemplate.convertAndSend("/topic/projects/" + projectId, payload);
+
+            log.info("Broadcasted {} for issue: {} to /topic/projects/{}",
+                    event, issue.getIssueKey(), projectId);
+
+        } catch (Exception e) {
+            // log and continue, never let WS failure break the HTTP response
+            log.error("Failed to broadcast issue event: {} for project: {}", event, projectId, e);
+        }
+    }
+
+    /**
+     * Broadcast a delete event with just the issue key.
+     * The frontend only needs the key to find and remove the card from the board.
+     */
+    private void broadcastDeleteEvent(Long projectId, String issueKey) {
+        try {
+            String payload = objectMapper.writeValueAsString(
+                    new java.util.HashMap<>() {{
+                        put("event", "ISSUE_DELETED");
+                        put("issueKey", issueKey);
+                    }}
+            );
+
+            messagingTemplate.convertAndSend("/topic/projects/" + projectId, payload);
+
+            log.info("Broadcasted ISSUE_DELETED for issue: {} to /topic/projects/{}", issueKey, projectId);
+
+        } catch (Exception e) {
+            log.error("Failed to broadcast delete event for issue: {} project: {}", issueKey, projectId, e);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Private helpers
+    // -------------------------------------------------------------------------
+
     private User findActiveUser(String email) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new UserNotFoundException("User not found with email: " + email));
-
         if (user.getDeletedAt() != null) {
             throw new UserNotFoundException("User account is deleted");
         }
-
         if (UserStatus.BANNED.equals(user.getStatus())) {
             throw new UserBannedException("Your account has been banned. You cannot perform this action.");
         }
-
         return user;
     }
 
-    /**
-     * Throw if the user is not an active member of the given workspace.
-     */
     private void requireWorkspaceMember(Long workspaceId, Long userId) {
         boolean isMember = workspaceMemberRepository
                 .findByWorkspaceIdAndUserIdAndRemovedAtIsNull(workspaceId, userId)
                 .isPresent();
-
         if (!isMember) {
             throw new UserAccessDeniedException("You are not a member of this workspace");
         }
     }
 
-    /**
-     * Find a project and verify the user has access to it.
-     * Extracted because every read query needs both steps.
-     */
     private Project findAccessibleProject(Long projectId, User user) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ProjectNotFoundException("Project not found with ID: " + projectId));
-
         if (project.getWorkspace().getSuspended()) {
             throw new WorkspaceSuspendedException("This workspace is suspended");
         }
-
         requireWorkspaceMember(project.getWorkspace().getId(), user.getId());
-
         return project;
     }
 
-    /**
-     * Resolve an optional assigneeId to a User, validating workspace membership.
-     * Returns null if assigneeId is null.
-     */
     private User resolveOptionalAssignee(Long assigneeId, Project project) {
-        if (assigneeId == null) {
-            return null;
-        }
-
+        if (assigneeId == null) return null;
         User assignee = userRepository.findById(assigneeId)
                 .orElseThrow(() -> new UserNotFoundException("Assignee not found with ID: " + assigneeId));
-
         requireWorkspaceMember(project.getWorkspace().getId(), assignee.getId());
-
         return assignee;
     }
 
-    /**
-     * Map Issue entity → IssueResponseDTO.
-     * Mirrors convertToResponseDTO() in MessageServiceImpl — same builder style.
-     */
     private IssueResponseDTO convertToResponseDTO(Issue issue) {
         return IssueResponseDTO.builder()
                 .id(issue.getId())

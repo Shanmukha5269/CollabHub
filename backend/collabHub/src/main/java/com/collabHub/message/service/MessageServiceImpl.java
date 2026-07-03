@@ -65,7 +65,7 @@ public class MessageServiceImpl implements MessageService {
             throw new WorkspaceSuspendedException("Cannot send messages in a suspended workspace");
         }
 
-        // 4. Check if sender is a member of the channel (for private channels) or workspace (for public)
+        // 4. Check membership
         boolean isChannelMember = channel.getMembers().contains(sender);
         boolean isWorkspaceMember = workspaceMemberRepository
                 .findByWorkspaceIdAndUserIdAndRemovedAtIsNull(channel.getWorkspace().getId(), sender.getId())
@@ -80,74 +80,58 @@ public class MessageServiceImpl implements MessageService {
         }
 
         // 5. Create and save the message
+        // relatedIssueKey is stored as-is from the DTO — null if not provided
         Message message = Message.builder()
                 .content(createMessageDTO.getContent())
                 .channel(channel)
                 .sender(sender)
+                .relatedIssueKey(createMessageDTO.getRelatedIssueKey())
                 .build();
 
         // 6. Add mentioned users if any
-        if (createMessageDTO.getMentionedUserIds() != null 
+        if (createMessageDTO.getMentionedUserIds() != null
                 && !createMessageDTO.getMentionedUserIds().isEmpty()) {
-                
+
             Set<User> mentionedUsers = new HashSet<>(
-                    userRepository.findAllById(
-                            createMessageDTO.getMentionedUserIds()));
-                    
-            // Check if all users exist
+                    userRepository.findAllById(createMessageDTO.getMentionedUserIds()));
+
             if (mentionedUsers.size() != createMessageDTO.getMentionedUserIds().size()) {
-                throw new UserNotFoundException(
-                        "One or more mentioned users not found");
+                throw new UserNotFoundException("One or more mentioned users not found");
             }
-        
-            // Validate mentioned users
+
             for (User mentionedUser : mentionedUsers) {
-            
                 boolean isInWorkspace = workspaceMemberRepository
                         .findByWorkspaceIdAndUserIdAndRemovedAtIsNull(
-                                channel.getWorkspace().getId(),
-                                mentionedUser.getId())
+                                channel.getWorkspace().getId(), mentionedUser.getId())
                         .isPresent();
-                        
+
                 if (!isInWorkspace) {
-                    throw new UserAccessDeniedException(
-                            "Mentioned user is not a member of this workspace");
+                    throw new UserAccessDeniedException("Mentioned user is not a member of this workspace");
                 }
-            
-                // Private channel validation
+
                 if (channel.getIsPrivate()) {
-                
-                    boolean isInChannel = channel.getMembers()
-                            .stream()
-                            .anyMatch(member ->
-                                    member.getId().equals(mentionedUser.getId()));
-                            
+                    boolean isInChannel = channel.getMembers().stream()
+                            .anyMatch(member -> member.getId().equals(mentionedUser.getId()));
+
                     if (!isInChannel) {
-                        throw new UserAccessDeniedException(
-                                "Mentioned user is not a member of this private channel");
+                        throw new UserAccessDeniedException("Mentioned user is not a member of this private channel");
                     }
                 }
             }
-        
+
             message.setMentions(mentionedUsers);
         }
 
         Message savedMessage = messageRepository.save(message);
         log.info("Message sent successfully with ID: {}", savedMessage.getId());
 
-        // return convertToResponseDTO(savedMessage);
-
         MessageResponseDTO responseDTO = convertToResponseDTO(savedMessage);
 
-        // Broadcast realtime update
+        // Broadcast realtime update — unchanged from original
         try {
-        
             String json = objectMapper.writeValueAsString(responseDTO);
-        
             messagingTemplate.convertAndSend("/topic/messages", json);
-        
         } catch (Exception e) {
-        
             log.error("Failed to broadcast websocket message", e);
         }
 
@@ -159,7 +143,6 @@ public class MessageServiceImpl implements MessageService {
     public MessageResponseDTO getMessageById(Long messageId, String userEmail) {
         log.info("Fetching message: {} for user: {}", messageId, userEmail);
 
-        // 1. Find and validate the user
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new UserNotFoundException("User not found with email: " + userEmail));
 
@@ -167,11 +150,9 @@ public class MessageServiceImpl implements MessageService {
             throw new UserNotFoundException("User account is deleted");
         }
 
-        // 2. Find the message
         Message message = messageRepository.findById(messageId)
                 .orElseThrow(() -> new MessageNotFoundException("Message not found with ID: " + messageId));
 
-        // 3. Check if user has access to the channel
         Channel channel = message.getChannel();
         boolean isChannelMember = channel.getMembers().contains(user);
         boolean isWorkspaceMember = workspaceMemberRepository
@@ -194,7 +175,6 @@ public class MessageServiceImpl implements MessageService {
     public Page<MessageResponseDTO> getChannelMessages(Long channelId, String userEmail, Pageable pageable) {
         log.info("Fetching messages for channel: {} for user: {}", channelId, userEmail);
 
-        // 1. Find and validate the user
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new UserNotFoundException("User not found with email: " + userEmail));
 
@@ -202,11 +182,9 @@ public class MessageServiceImpl implements MessageService {
             throw new UserNotFoundException("User account is deleted");
         }
 
-        // 2. Find and validate the channel
         Channel channel = channelRepository.findById(channelId)
                 .orElseThrow(() -> new ChannelNotFoundException("Channel not found with ID: " + channelId));
 
-        // 3. Check if user has access to the channel
         boolean isChannelMember = channel.getMembers().contains(user);
         boolean isWorkspaceMember = workspaceMemberRepository
                 .findByWorkspaceIdAndUserIdAndRemovedAtIsNull(channel.getWorkspace().getId(), user.getId())
@@ -220,7 +198,6 @@ public class MessageServiceImpl implements MessageService {
             throw new UserAccessDeniedException("You are not a member of this private channel");
         }
 
-        // 4. Fetch paginated messages
         Page<Message> messages = messageRepository.findByChannelIdPaginated(channelId, pageable);
         return messages.map(this::convertToResponseDTO);
     }
@@ -229,7 +206,6 @@ public class MessageServiceImpl implements MessageService {
     public MessageResponseDTO editMessage(Long messageId, UpdateMessageDTO updateMessageDTO, String userEmail) {
         log.info("Editing message: {} by user: {}", messageId, userEmail);
 
-        // 1. Find and validate the user
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new UserNotFoundException("User not found with email: " + userEmail));
 
@@ -241,63 +217,45 @@ public class MessageServiceImpl implements MessageService {
             throw new UserBannedException("Your account has been banned. You cannot edit messages.");
         }
 
-        // 2. Find the message
         Message message = messageRepository.findById(messageId)
                 .orElseThrow(() -> new MessageNotFoundException("Message not found with ID: " + messageId));
 
-        // 3. Check if user is the sender
         if (!message.getSender().getId().equals(user.getId())) {
             throw new UserAccessDeniedException("You can only edit your own messages");
         }
 
-        // 4. Add mentioned users if any
         if (updateMessageDTO.getMentionedUserIds() != null) {
-
             Set<User> mentionedMembers =
-                    new HashSet<>(userRepository.findAllById(
-                            updateMessageDTO.getMentionedUserIds()));
-                    
-            // Check if all users exist
+                    new HashSet<>(userRepository.findAllById(updateMessageDTO.getMentionedUserIds()));
+
             if (mentionedMembers.size() != updateMessageDTO.getMentionedUserIds().size()) {
-                throw new UserNotFoundException(
-                        "One or more mentioned users not found");
+                throw new UserNotFoundException("One or more mentioned users not found");
             }
-        
+
             Workspace workspace = message.getChannel().getWorkspace();
-        
+
             for (User member : mentionedMembers) {
-            
                 boolean isInMember = workspaceMemberRepository
-                        .findByWorkspaceIdAndUserIdAndRemovedAtIsNull(
-                                workspace.getId(),
-                                member.getId())
+                        .findByWorkspaceIdAndUserIdAndRemovedAtIsNull(workspace.getId(), member.getId())
                         .isPresent();
-                        
+
                 if (!isInMember) {
-                    throw new UserAccessDeniedException(
-                            "Mentioned user is not part of workspace");
+                    throw new UserAccessDeniedException("Mentioned user is not part of workspace");
                 }
-            
-                // Validate private channel membership
+
                 if (message.getChannel().getIsPrivate()) {
-                
-                    boolean isInChannel = message.getChannel()
-                            .getMembers()
-                            .stream()
-                            .anyMatch(channelMember ->
-                                    channelMember.getId().equals(member.getId()));
-                            
+                    boolean isInChannel = message.getChannel().getMembers().stream()
+                            .anyMatch(channelMember -> channelMember.getId().equals(member.getId()));
+
                     if (!isInChannel) {
-                        throw new UserAccessDeniedException(
-                                "Mentioned user is not part of private channel");
+                        throw new UserAccessDeniedException("Mentioned user is not part of private channel");
                     }
                 }
             }
-        
+
             message.setMentions(mentionedMembers);
         }
 
-        // 5. Update message content
         if (updateMessageDTO.getContent() != null && !updateMessageDTO.getContent().isEmpty()) {
             message.setContent(updateMessageDTO.getContent());
             message.setIsEdited(true);
@@ -306,19 +264,12 @@ public class MessageServiceImpl implements MessageService {
         Message updatedMessage = messageRepository.save(message);
         log.info("Message edited successfully with ID: {}", updatedMessage.getId());
 
-        // return convertToResponseDTO(updatedMessage);
-
         MessageResponseDTO responseDTO = convertToResponseDTO(updatedMessage);
 
-        // Broadcast realtime update
         try {
-        
             String json = objectMapper.writeValueAsString(responseDTO);
-        
             messagingTemplate.convertAndSend("/topic/messages", json);
-        
         } catch (Exception e) {
-        
             log.error("Failed to broadcast websocket message", e);
         }
 
@@ -329,7 +280,6 @@ public class MessageServiceImpl implements MessageService {
     public void deleteMessage(Long messageId, String userEmail) {
         log.info("Deleting message: {} by user: {}", messageId, userEmail);
 
-        // 1. Find and validate the user
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new UserNotFoundException("User not found with email: " + userEmail));
 
@@ -337,26 +287,19 @@ public class MessageServiceImpl implements MessageService {
             throw new UserNotFoundException("User account is deleted");
         }
 
-        // 2. Find the message
         Message message = messageRepository.findById(messageId)
                 .orElseThrow(() -> new MessageNotFoundException("Message not found with ID: " + messageId));
 
-        // 3. Check if user is the sender
         if (!message.getSender().getId().equals(user.getId())) {
             throw new UserAccessDeniedException("You can only delete your own messages");
         }
 
-        // 4. Delete the message
         messageRepository.delete(message);
         log.info("Message deleted successfully with ID: {}", messageId);
 
-        // Broadcast realtime update
         try {
-        
             messagingTemplate.convertAndSend("/topic/messages", "Message deleted successfully");
-        
         } catch (Exception e) {
-        
             log.error("Failed to broadcast websocket message", e);
         }
     }
@@ -365,7 +308,6 @@ public class MessageServiceImpl implements MessageService {
     public MessageResponseDTO addReaction(Long messageId, String emoji, String userEmail) {
         log.info("Adding reaction: {} to message: {} by user: {}", emoji, messageId, userEmail);
 
-        // 1. Find and validate the user
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new UserNotFoundException("User not found with email: " + userEmail));
 
@@ -373,12 +315,9 @@ public class MessageServiceImpl implements MessageService {
             throw new UserNotFoundException("User account is deleted");
         }
 
-        // 2. Find the message
         Message message = messageRepository.findById(messageId)
                 .orElseThrow(() -> new MessageNotFoundException("Message not found with ID: " + messageId));
 
-
-        // 3. Add or increment reaction
         message.getReactions().put(emoji, message.getReactions().getOrDefault(emoji, 0) + 1);
 
         Message updatedMessage = messageRepository.save(message);
@@ -391,7 +330,6 @@ public class MessageServiceImpl implements MessageService {
     public MessageResponseDTO removeReaction(Long messageId, String emoji, String userEmail) {
         log.info("Removing reaction: {} from message: {} by user: {}", emoji, messageId, userEmail);
 
-        // 1. Find and validate the user
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new UserNotFoundException("User not found with email: " + userEmail));
 
@@ -399,11 +337,9 @@ public class MessageServiceImpl implements MessageService {
             throw new UserNotFoundException("User account is deleted");
         }
 
-        // 2. Find the message
         Message message = messageRepository.findById(messageId)
                 .orElseThrow(() -> new MessageNotFoundException("Message not found with ID: " + messageId));
 
-        // 3. Remove or decrement reaction
         if (message.getReactions().containsKey(emoji)) {
             int count = message.getReactions().get(emoji);
             if (count > 1) {
@@ -419,9 +355,6 @@ public class MessageServiceImpl implements MessageService {
         return convertToResponseDTO(updatedMessage);
     }
 
-    /**
-     * Convert Message entity to MessageResponseDTO
-     */
     private MessageResponseDTO convertToResponseDTO(Message message) {
         return MessageResponseDTO.builder()
                 .id(message.getId())
@@ -435,6 +368,7 @@ public class MessageServiceImpl implements MessageService {
                 .updatedAt(message.getUpdatedAt())
                 .isEdited(message.getIsEdited())
                 .reactions(message.getReactions())
+                .relatedIssueKey(message.getRelatedIssueKey())   // new field — null if not linked
                 .mentions(message.getMentions().stream()
                         .map(user -> MessageResponseDTO.UserMinimalDTO.builder()
                                 .id(user.getId())

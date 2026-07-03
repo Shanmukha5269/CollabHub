@@ -37,7 +37,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/users/register", "/api/auth/login").permitAll()
                         .requestMatchers("/api/health").permitAll()
                         .requestMatchers("/ws/**").permitAll()
-                        .requestMatchers("/ws-test.html","/").permitAll()
+                        .requestMatchers("/ws-test.html","/ws-sprint-test.html","/").permitAll()
                         .anyRequest().authenticated()
                 );
 
