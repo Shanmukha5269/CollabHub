@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Issue & Sprint WebSocket Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        label { display: block; margin-top: 10px; }
+        input, textarea, button, select { width: 100%; max-width: 520px; padding: 8px; margin-top: 4px; }
+        .box { border: 1px solid #ccc; padding: 10px; margin-top: 10px; background: #f8f8f8; }
+        #log { max-height: 320px; overflow-y: auto; font-size: 14px; }
+        .event-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; margin-right: 6px; }
+        .ISSUE_CREATED       { background: #d4edda; color: #155724; }
+        .ISSUE_UPDATED       { background: #cce5ff; color: #004085; }
+        .ISSUE_STATUS_CHANGED { background: #fff3cd; color: #856404; }
+        .ISSUE_DELETED       { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+<h1>Issue &amp; Sprint WebSocket Test</h1>
+<p>Use this page to test real-time issue events on <code>/topic/projects/{projectId}</code>.</p>
+
+<hr />
+<h2>Step 1: Login (to get JWT token)</h2>
+
+<label>Login Email</label>
+<input id="loginEmail" placeholder="user@example.com" />
+
+<label>Login Password</label>
+<input id="loginPassword" type="password" placeholder="password" />
+
+<button id="loginButton">Login</button>
+
+<div id="tokenBox" style="margin-top: 10px; display: none;">
+    <strong>JWT Token:</strong>
+    <textarea id="displayToken" readonly style="width: 100%; height: 80px;"></textarea>
+    <button id="copyTokenButton">Copy Token</button>
+</div>
+
+<hr />
+<h2>Step 2: Connect WebSocket</h2>
+
+<label>WebSocket endpoint</label>
+<input id="endpoint" value="ws://localhost:8800/ws/messaging" />
+
+<button id="connectButton">Connect</button>
+<button id="disconnectButton" disabled>Disconnect</button>
+<button id="subscribeButton" disabled>Subscribe to project topic</button>
+
+<label>Project ID to subscribe to</label>
+<input id="projectId" value="1" placeholder="Project ID" />
+
+<div class="box">
+    <strong>Subscribed topic:</strong>
+    <div id="subscribedTopic">—</div>
+</div>
+
+<hr />
+<h2>Step 3: Create an issue (triggers ISSUE_CREATED)</h2>
+<p><strong>Note:</strong> Token is auto-filled from Step 1.</p>
+
+<label>JWT Token</label>
+<input id="token" placeholder="Paste JWT token from Step 1" />
+
+<label>Issue title</label>
+<input id="issueTitle" value="Test issue from WS page" />
+
+<label>Type</label>
+<select id="issueType">
+    <option value="TASK">TASK</option>
+    <option value="BUG">BUG</option>
+    <option value="STORY">STORY</option>
+</select>
+
+<label>Priority</label>
+<select id="issuePriority">
+    <option value="MEDIUM">MEDIUM</option>
+    <option value="LOW">LOW</option>
+    <option value="HIGH">HIGH</option>
+    <option value="CRITICAL">CRITICAL</option>
+</select>
+
+<button id="createIssueButton">POST /api/projects/{projectId}/issues</button>
+
+<hr />
+<h2>Step 4: Change issue status (triggers ISSUE_STATUS_CHANGED)</h2>
+<p>Issue ID is auto-filled when you create one above or you can type it manually.</p>
+
+<label>Issue ID</label>
+<input id="issueId" placeholder="Auto-filled after create" />
+
+<label>New status</label>
+<select id="issueStatus">
+    <option value="IN_PROGRESS">IN_PROGRESS</option>
+    <option value="TODO">TODO</option>
+    <option value="IN_REVIEW">IN_REVIEW</option>
+    <option value="DONE">DONE</option>
+</select>
+
+<button id="changeStatusButton">PATCH /api/projects/{projectId}/issues/{id}/status</button>
+
+<hr />
+<h2>Step 5: Update issue (triggers ISSUE_UPDATED)</h2>
+
+<label>New title</label>
+<input id="updatedTitle" placeholder="Updated title" />
+
+<button id="updateIssueButton">PUT /api/projects/{projectId}/issues/{id}</button>
+
+<hr />
+<h2>Step 6: Delete issue (triggers ISSUE_DELETED)</h2>
+
+<button id="deleteIssueButton">DELETE /api/projects/{projectId}/issues/{id}</button>
+
+<hr />
+<h2>Step 7: Sprint actions</h2>
+<p>Each action fires an HTTP request. Watch the log for the HTTP response — sprint actions do not broadcast WebSocket events directly, but creating/moving issues to sprints does.</p>
+
+<label>Sprint name</label>
+<input id="sprintName" value="Sprint 1" />
+
+<button id="createSprintButton">POST /api/projects/{projectId}/sprints</button>
+
+<label>Sprint ID (auto-filled after create)</label>
+<input id="sprintId" placeholder="Auto-filled after create" />
+
+<button id="addIssueToSprintButton">POST — add issue to sprint</button>
+<button id="startSprintButton">PATCH — start sprint</button>
+<button id="completeSprintButton">PATCH — complete sprint</button>
+
+<hr />
+<h2>Step 8: Get board (verify grouped response)</h2>
+
+<button id="getBoardButton">GET /api/projects/{projectId}/board</button>
+
+<div class="box">
+    <strong>Status:</strong>
+    <div id="status">Disconnected</div>
+</div>
+
+<div class="box">
+    <strong>Log:</strong>
+    <div id="log"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+<script>
+    const statusEl        = document.getElementById('status');
+    const logEl           = document.getElementById('log');
+    const endpointEl      = document.getElementById('endpoint');
+    const tokenEl         = document.getElementById('token');
+    const projectIdEl     = document.getElementById('projectId');
+    const loginEmailEl    = document.getElementById('loginEmail');
+    const loginPasswordEl = document.getElementById('loginPassword');
+    const displayTokenEl  = document.getElementById('displayToken');
+    const tokenBoxEl      = document.getElementById('tokenBox');
+    const issueIdEl       = document.getElementById('issueId');
+    const sprintIdEl      = document.getElementById('sprintId');
+
+    let stompClient = null;
+    let socket = null;
+
+    // -------------------------------------------------------------------------
+    // Logging
+    // -------------------------------------------------------------------------
+
+    function appendLog(message, eventType) {
+      const line = document.createElement('div');
+      line.style.padding = '3px 0';
+      line.style.borderBottom = '1px solid #eee';
+
+      if (eventType) {
+        const tag = document.createElement('span');
+        tag.className = 'event-tag ' + eventType;
+        tag.textContent = eventType;
+        line.appendChild(tag);
+      }
+
+      const ts = document.createElement('span');
+      ts.style.color = '#999';
+      ts.style.fontSize = '12px';
+      ts.style.marginRight = '8px';
+      ts.textContent = new Date().toLocaleTimeString();
+      line.appendChild(ts);
+
+      const text = document.createTextNode(message);
+      line.appendChild(text);
+
+      logEl.appendChild(line);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function setStatus(value) {
+      statusEl.textContent = value;
+    }
+
+    // -------------------------------------------------------------------------
+    // Step 1 — Login
+    // -------------------------------------------------------------------------
+
+    document.getElementById('loginButton').addEventListener('click', async () => {
+      const email    = loginEmailEl.value.trim();
+      const password = loginPasswordEl.value.trim();
+
+      if (!email || !password) {
+        appendLog('Email and password are required.');
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+
+        const data = await response.json();
+        const token = data?.data?.token;
+
+        if (response.ok && token) {
+          appendLog('Login successful. Token retrieved.');
+          displayTokenEl.value = token;
+          tokenEl.value = token;
+          tokenBoxEl.style.display = 'block';
+        } else {
+          appendLog('Login failed: ' + (data?.message || response.statusText));
+        }
+      } catch (err) {
+        appendLog('Login error: ' + err.message);
+      }
+    });
+
+    document.getElementById('copyTokenButton').addEventListener('click', () => {
+      displayTokenEl.select();
+      document.execCommand('copy');
+      appendLog('Token copied to clipboard.');
+    });
+
+    // -------------------------------------------------------------------------
+    // Step 2 — Connect & Subscribe
+    // -------------------------------------------------------------------------
+
+    document.getElementById('connectButton').addEventListener('click', () => {
+      const url = endpointEl.value.trim();
+      if (!url) return;
+
+      socket = new WebSocket(url);
+      stompClient = Stomp.over(socket);
+      stompClient.debug = (msg) => appendLog('[DEBUG] ' + msg);
+
+      stompClient.connect({}, (frame) => {
+        setStatus('Connected');
+        appendLog('Connected: ' + frame);
+        document.getElementById('disconnectButton').disabled = false;
+        document.getElementById('subscribeButton').disabled = false;
+      }, (error) => {
+        setStatus('Error');
+        appendLog('Connection error: ' + JSON.stringify(error));
+      });
+    });
+
+    document.getElementById('disconnectButton').addEventListener('click', () => {
+      if (stompClient && stompClient.connected) {
+        stompClient.disconnect(() => {
+          setStatus('Disconnected');
+          appendLog('Disconnected.');
+          document.getElementById('disconnectButton').disabled = true;
+          document.getElementById('subscribeButton').disabled = true;
+          document.getElementById('subscribedTopic').textContent = '—';
+        });
+      }
+    });
+
+    document.getElementById('subscribeButton').addEventListener('click', () => {
+      if (!stompClient || !stompClient.connected) {
+        appendLog('Not connected. Connect first.');
+        return;
+      }
+
+      const projectId = projectIdEl.value.trim();
+      if (!projectId) {
+        appendLog('Project ID is required to subscribe.');
+        return;
+      }
+
+      // Topic is per-project — /topic/projects/{projectId}
+      // This is different from messaging which uses /topic/messages globally.
+      const topic = '/topic/projects/' + projectId;
+
+      stompClient.subscribe(topic, (message) => {
+        try {
+          const parsed = JSON.parse(message.body);
+          const event  = parsed.event;
+
+          if (event === 'ISSUE_DELETED') {
+            // Delete payload only has issueKey, no data object
+            appendLog('Issue deleted: ' + parsed.issueKey, event);
+
+          } else if (event && parsed.data) {
+            // Create / update / status change — full issue DTO in data field
+            const issue = parsed.data;
+
+            // Auto-fill issue ID for the action buttons below
+            if (issue.id) issueIdEl.value = issue.id;
+
+            appendLog(
+              issue.issueKey + ' — ' + issue.title +
+              ' | status: ' + issue.status +
+              ' | priority: ' + issue.priority,
+              event
+            );
+
+            // Print the full payload in the log for inspection
+            appendLog('Full payload: ' + JSON.stringify(parsed.data, null, 2));
+
+          } else {
+            // Unknown or raw payload — show as-is
+            appendLog('[RECEIVED] ' + message.body);
+          }
+
+        } catch (e) {
+          appendLog('[RECEIVED RAW] ' + message.body);
+        }
+      });
+
+      document.getElementById('subscribedTopic').textContent = topic;
+      appendLog('Subscribed to ' + topic);
+    });
+
+    // -------------------------------------------------------------------------
+    // Shared HTTP helper
+    // -------------------------------------------------------------------------
+
+    async function http(method, path, body) {
+      const token = tokenEl.value.trim();
+      if (!token) {
+        appendLog('JWT token is required. Please login first.');
+        return null;
+      }
+
+      const headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token };
+
+      try {
+        const response = await fetch(path, {
+          method,
+          headers,
+          body: body ? JSON.stringify(body) : undefined
+        });
+        const text = await response.text();
+        appendLog('HTTP ' + method + ' ' + path + ' → ' + response.status + ' ' + text);
+        return { status: response.status, text };
+      } catch (err) {
+        appendLog('HTTP error: ' + err.message);
+        return null;
+      }
+    }
+
+    function getProjectId() { return projectIdEl.value.trim(); }
+    function getIssueId()   { return issueIdEl.value.trim(); }
+    function getSprintId()  { return sprintIdEl.value.trim(); }
+
+    // -------------------------------------------------------------------------
+    // Step 3 — Create issue
+    // -------------------------------------------------------------------------
+
+    document.getElementById('createIssueButton').addEventListener('click', async () => {
+      const projectId = getProjectId();
+      if (!projectId) { appendLog('Project ID is required.'); return; }
+
+      const result = await http('POST', '/api/projects/' + projectId + '/issues', {
+        title:    document.getElementById('issueTitle').value.trim(),
+        type:     document.getElementById('issueType').value,
+        priority: document.getElementById('issuePriority').value
+      });
+
+      // Auto-fill issue ID from response
+      if (result && result.status === 201) {
+        try {
+          const data = JSON.parse(result.text);
+          if (data.id) issueIdEl.value = data.id;
+        } catch (e) {}
+      }
+
+      // WS event ISSUE_CREATED should appear in the log automatically via subscription
+      appendLog('Watch the log above for ISSUE_CREATED WebSocket event on /topic/projects/' + projectId);
+    });
+
+    // -------------------------------------------------------------------------
+    // Step 4 — Change status
+    // -------------------------------------------------------------------------
+
+    document.getElementById('changeStatusButton').addEventListener('click', async () => {
+      const projectId = getProjectId();
+      const issueId   = getIssueId();
+      if (!projectId || !issueId) { appendLog('Project ID and Issue ID are required.'); return; }
+
+      await http('PATCH', '/api/projects/' + projectId + '/issues/' + issueId + '/status', {
+        status: document.getElementById('issueStatus').value
+      });
+
+      appendLog('Watch the log above for ISSUE_STATUS_CHANGED WebSocket event.');
+    });
+
+    // -------------------------------------------------------------------------
+    // Step 5 — Update issue
+    // -------------------------------------------------------------------------
+
+    document.getElementById('updateIssueButton').addEventListener('click', async () => {
+      const projectId = getProjectId();
+      const issueId   = getIssueId();
+      const title     = document.getElementById('updatedTitle').value.trim();
+
+      if (!projectId || !issueId) { appendLog('Project ID and Issue ID are required.'); return; }
+      if (!title) { appendLog('New title is required.'); return; }
+
+      await http('PUT', '/api/projects/' + projectId + '/issues/' + issueId, { title });
+
+      appendLog('Watch the log above for ISSUE_UPDATED WebSocket event.');
+    });
+
+    // -------------------------------------------------------------------------
+    // Step 6 — Delete issue
+    // -------------------------------------------------------------------------
+
+    document.getElementById('deleteIssueButton').addEventListener('click', async () => {
+      const projectId = getProjectId();
+      const issueId   = getIssueId();
+      if (!projectId || !issueId) { appendLog('Project ID and Issue ID are required.'); return; }
+
+      await http('DELETE', '/api/projects/' + projectId + '/issues/' + issueId);
+
+      appendLog('Watch the log above for ISSUE_DELETED WebSocket event.');
+    });
+
+    // -------------------------------------------------------------------------
+    // Step 7 — Sprint actions
+    // -------------------------------------------------------------------------
+
+    document.getElementById('createSprintButton').addEventListener('click', async () => {
+      const projectId = getProjectId();
+      if (!projectId) { appendLog('Project ID is required.'); return; }
+
+      const result = await http('POST', '/api/projects/' + projectId + '/sprints', {
+        name: document.getElementById('sprintName').value.trim(),
+        goal: 'Test sprint goal'
+      });
+
+      if (result && result.status === 201) {
+        try {
+          const data = JSON.parse(result.text);
+          if (data.id) sprintIdEl.value = data.id;
+        } catch (e) {}
+      }
+    });
+
+    document.getElementById('addIssueToSprintButton').addEventListener('click', async () => {
+      const projectId = getProjectId();
+      const sprintId  = getSprintId();
+      const issueId   = getIssueId();
+      if (!projectId || !sprintId || !issueId) {
+        appendLog('Project ID, Sprint ID and Issue ID are all required.');
+        return;
+      }
+      await http('POST', '/api/projects/' + projectId + '/sprints/' + sprintId + '/issues/' + issueId);
+    });
+
+    document.getElementById('startSprintButton').addEventListener('click', async () => {
+      const projectId = getProjectId();
+      const sprintId  = getSprintId();
+      if (!projectId || !sprintId) { appendLog('Project ID and Sprint ID are required.'); return; }
+      await http('PATCH', '/api/projects/' + projectId + '/sprints/' + sprintId + '/start');
+    });
+
+    document.getElementById('completeSprintButton').addEventListener('click', async () => {
+      const projectId = getProjectId();
+      const sprintId  = getSprintId();
+      if (!projectId || !sprintId) { appendLog('Project ID and Sprint ID are required.'); return; }
+      await http('PATCH', '/api/projects/' + projectId + '/sprints/' + sprintId + '/complete');
+    });
+
+    // -------------------------------------------------------------------------
+    // Step 8 — Get board
+    // -------------------------------------------------------------------------
+
+    document.getElementById('getBoardButton').addEventListener('click', async () => {
+      const projectId = getProjectId();
+      if (!projectId) { appendLog('Project ID is required.'); return; }
+      await http('GET', '/api/projects/' + projectId + '/board');
+    });
+
+</script>
+</body>
+</html>
