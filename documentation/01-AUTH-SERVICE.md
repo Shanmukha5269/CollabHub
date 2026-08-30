@@ -303,6 +303,7 @@ sequenceDiagram
 
 This is what happens on *every other* API call once the client has a token (e.g. `GET /api/workspaces`):
 
+```mermaid
 sequenceDiagram
     participant Client
     participant Filter as JwtAuthenticationFilter
@@ -335,7 +336,7 @@ sequenceDiagram
     Security-->>Controller: email
 
     Controller->>Controller: Delegate to Service(params, email)
-
+```
 ---
 
 ## 10. FAQ / Things You Should Be Able to Answer
