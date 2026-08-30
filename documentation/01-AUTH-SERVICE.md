@@ -303,31 +303,38 @@ sequenceDiagram
 
 This is what happens on *every other* API call once the client has a token (e.g. `GET /api/workspaces`):
 
-```mermaid
 sequenceDiagram
     participant Client
-    participant JwtAuthenticationFilter
-    participant SecurityContextHolder
+    participant Filter as JwtAuthenticationFilter
+    participant Context as SecurityContextHolder
     participant Controller as Any Controller
-    participant SecurityUtil
+    participant Security as SecurityUtil
 
-    Client->>JwtAuthenticationFilter: GET /api/workspaces  Authorization: Bearer <jwt>
-    JwtAuthenticationFilter->>JwtAuthenticationFilter: extract token from header
-    JwtAuthenticationFilter->>JwtAuthenticationFilter: jwtTokenProvider.validateToken(token)
-    alt valid
-        JwtAuthenticationFilter->>JwtAuthenticationFilter: getEmailFromToken(token)
-        JwtAuthenticationFilter->>SecurityContextHolder: setAuthentication(email, no authorities)
-    else invalid/missing
-        Note over JwtAuthenticationFilter: context left empty — request continues unauthenticated
+    Client->>Filter: GET /api/workspaces
+    Client->>Filter: Authorization: Bearer JWT
+
+    Filter->>Filter: Extract token from header
+    Filter->>Filter: validateToken(token)
+
+    alt Valid token
+        Filter->>Filter: getEmailFromToken(token)
+        Filter->>Context: setAuthentication(email)
+    else Invalid or missing token
+        Note over Filter: Security context remains empty
     end
-    JwtAuthenticationFilter->>Controller: filterChain.doFilter() → Spring Security rule check
-    Note over Controller: SecurityConfig requires authentication for this path;<br/>if context is empty → 401/403 returned here, controller never runs
-    Controller->>SecurityUtil: getCurrentUserEmail()
-    SecurityUtil->>SecurityContextHolder: getContext().getAuthentication().getName()
-    SecurityContextHolder-->>SecurityUtil: email
-    SecurityUtil-->>Controller: email
-    Controller->>Controller: delegate to Service with (params, email)
-```
+
+    Filter->>Controller: filterChain.doFilter()
+
+    Note over Controller: Spring Security checks authentication
+    Note over Controller: If unauthenticated, request is rejected
+    Note over Controller: Controller does not execute
+
+    Controller->>Security: getCurrentUserEmail()
+    Security->>Context: getContext().getAuthentication().getName()
+    Context-->>Security: email
+    Security-->>Controller: email
+
+    Controller->>Controller: Delegate to Service(params, email)
 
 ---
 
